@@ -39,18 +39,18 @@ class actConnGraph(object):
     ARGUMENTS:
     - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  
     
-    nhid_glod  : Number of Global cell units
+    nhid_glod : Number of Global cell units
     nInput    : Number of input units
     nhidNetw  : Number of Network cell units
     nOut      : Number of output units
     seqLen    : Length of sequences
-    weights    : Dictionnary containing the weights of each cells
-    masks      : Mask applied to the corresponding weights after every batch
-    actfct     : Activation function used in RNN
+    weights   : Dictionnary containing the weights of each cells
+    masks     : Mask applied to the corresponding weights after every batch
+    actfct    : Activation function used in RNN
     batchSize : Number of examples in each batch
-    learnRate  : Learning rate coefficient
-    model      : Which model to use ...
-                    '__multirnn_model__' : RNN(glob+netw) + calcium dynamic
+    learnRate : Learning rate coefficient
+    model     : Which model to use ...
+                    '__NGCmodel__' : RNN( Network & Global cell) + calcium dynamic
 
     ...
     - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
@@ -142,10 +142,8 @@ class actConnGraph(object):
 
             #Variable placeholders 
             self._T1    = tf.placeholder("float", [None, self.seqLen, self.nInput]) # Input at time t
-            self._T2    = tf.placeholder("float", [None, self.nInput])               # Input at time t+1
-            self.initG  = tf.placeholder("float", [None, self.nhidGlob])             # State of global cell
-            self.initNG = tf.placeholder("float", [None, self.nhid])                  # State of netw+global cell
-            #self.learnRate = tf.placeholder("float", [])                             # Learning rate for adaptive LR
+            self._T2    = tf.placeholder("float", [None, self.nInput])              # Input at time t+1
+            #self.learnRate = tf.placeholder("float", [])                           # Learning rate for adaptive LR
 
             #Shape data
             _Z1 = shapeData(self._T1, self.seqLen, self.nInput)
@@ -153,7 +151,7 @@ class actConnGraph(object):
             # --------------------------------------------------- Model --------------------------------------------------- #
             
             #Prediction using models
-            self._Z2 = model(_Z1, initNG= self.initNG, initG= self.initG)
+            self._Z2 = model(_Z1)
 
             #List of all variables 
             self.variables = tf.trainable_variables() 		
@@ -191,8 +189,12 @@ class actConnGraph(object):
 
         self.graph = graph
 
-    def __multirnn_model__(self,_Z1, initNG= None, initG= None):
-        #Full multi-layer model
+    def __NGCmodel__(self,_Z1):
+        # RNN(Network+Global cells) & Calcium dynamic
+
+        #Initialization
+        ngO = np.zeros((self.batchSize, self.nhid),dtype='float32') # Netw+Glob state initialization
+        Z2  = 0                                     # Model prediction
 
         #Defining masks
         self.masks = {'1ng_IH_HH': 
@@ -220,13 +222,10 @@ class actConnGraph(object):
         #Network + Global dynamic cell (concatenated)
         ngCell = rnn_cell.BasicRNNCell(self.nhid, activation= self.actfct)
         ngCell = rnn_cell.MultiRNNCell([ngCell])
-
-        #Network state initialization
-        ngO = initNG
         
-        # Initializing
-        Z2 = 0  #Prediction
+        
 
+        #RNN looping through sequence time points
         with tf.variable_scope("ng_IH_HH") as scope:
             for i in range(self.seqLen):
 
@@ -249,8 +248,11 @@ class actConnGraph(object):
         return Z2
 
 
-    def __dir_model__(self,_Z1, initNG= None, initG= None):
+    def __dir_model__(self,_Z1):
         #Building the model following the structure defined under actConnGraph class
+
+        # Global state initialization
+        initG = np.zeros((self.batchSize, self.nhidGlob), dtype='float32') 
 
         #Defining the weights
         self.weights = { 
@@ -393,15 +395,13 @@ class actConnGraph(object):
                          intra_op_parallelism_threads=1)
 
         with tf.Session(graph=self.graph, config = config) as sess:
-            # Initialization
+
 
             #Initializing the variables
             sess.run(tf.initialize_all_variables())
 
             stepTr  = 0 #Training steps
             stepBat = 0 #Testing steps
-            Ginit   = np.zeros((self.batchSize, self.nhidGlob)) # Global state initialization
-            NGinit  = np.zeros((self.batchSize, self.nhid))
 
             # Keep training until reach max iterations
             while stepTr < nbIters:
@@ -414,9 +414,8 @@ class actConnGraph(object):
 
                 stepBat = 0 #for batches based on display step
 
-                feed_dict={self._T1: T1_batch[stepBat,...], 
-                           self._T2: T2_batch[stepBat,...], 
-                           self.initG: Ginit, self.initNG: NGinit}
+                feed_dict={ self._T1: T1_batch[stepBat,...], 
+                            self._T2: T2_batch[stepBat,...]  }
 
                 #Running backprop
                 sess.run(self.optimizer, feed_dict)
@@ -424,7 +423,7 @@ class actConnGraph(object):
                 #Adding noise to weights
                 #sess.run(self.V_add_noise)
 
-                # Applying masks
+                #Applying masks
                 sess.run(self.masking)
 
 
@@ -433,9 +432,7 @@ class actConnGraph(object):
 
                     #Dictionnary for plotting training progress
                     feedDict_Tr = { self._T1    : T1_batch[stepBat,...], 
-                                    self._T2    : T2_batch[stepBat,...], 
-                                    self.initG  : Ginit, 
-                                    self.initNG : NGinit }
+                                    self._T2    : T2_batch[stepBat,...]  }
 
                     #Training fit (mean L2 loss)
                     trFit   = sess.run(self.ngml, feed_dict = feedDict_Tr)
@@ -445,9 +442,7 @@ class actConnGraph(object):
 
                     #Testing fit with new data
                     teFit   = sess.run(self.precision, feed_dict={ self._T1    : testX[0,...], 
-                                                                   self._T2    : testY[0,...], 
-                                                                   self.initG  : Ginit, 
-                                                                   self.initNG : NGinit  }) 
+                                                                   self._T2    : testY[0,...]  }) 
 
                     #Printing progress 
                     print("Iter: " + str(stepTr) + "/" + str(nbIters) +   "  ~  L2 Loss: "     + "{:.6f}".format(trFit) +
@@ -472,7 +467,21 @@ class actConnGraph(object):
              in order to evaluate the fit of the model.
 
              data: data to test. Must be of shape [nb_ex , seqLen , nb_units]
-             ckpt: checkpoint file, including full path '''
+             ckpt: ckpt can either be a full path to the ckpt, or just the ckpt name.
+                        If only the name is provided, plotfit will look into activeConn/checkpoints/
+                        If agument not provided, plotfit will use the backup ckpt in /tmp.
+
+
+             '''
+
+        # To adjust for the batchsize of the fitting dataset, we need to 
+        # assign self.batchSize for the total number of sequences in the fit set.
+        # The real batchsize value is reassigned at the end.
+        tempBatchSize  = np.copy(self.batchSize)  # Holding reacl batchSize value
+        self.batchSize = T1.shape[1]        
+
+        if ckpt[0] != '/':
+            ckpt = self._mPath + 'checkpoints/' + ckpt
 
         #Passing data in model
         with tf.Session(graph=self.graph) as sess:
@@ -482,12 +491,7 @@ class actConnGraph(object):
 
                 nEx  = T1.shape[0]
 
-                Ginit  = np.zeros((nEx, self.nhidGlob),dtype='float32') # Global state initialization
-                NGinit = np.zeros((nEx, self.nhid))
-
-                _Z2 = sess.run(self._Z2, feed_dict = { self._T1    : T1,
-                                                       self.initG  : Ginit,
-                                                       self.initNG : NGinit } )
+                _Z2 = sess.run(self._Z2, feed_dict = { self._T1 : T1 })
 
         #Plotting test set
         plt.figure(figsize=(20, 5))
@@ -505,6 +509,8 @@ class actConnGraph(object):
         plt.ylabel('Neurons') ; plt.xlabel('Time (frames)') ; plt.colorbar()
 
         plt.show()
+
+        self.batchSize = tempBatchSize
 
   
     def showVars(self):
