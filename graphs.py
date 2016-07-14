@@ -40,14 +40,14 @@ class actConnGraph(object):
     - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  
     
     nhid_glod  : Number of Global cell units
-    n_input    : Number of input units
-    nhid_netw  : Number of Network cell units
-    n_out      : Number of output units
-    seq_len    : Length of sequences
+    nInput    : Number of input units
+    nhidNetw  : Number of Network cell units
+    nOut      : Number of output units
+    seqLen    : Length of sequences
     weights    : Dictionnary containing the weights of each cells
     masks      : Mask applied to the corresponding weights after every batch
     actfct     : Activation function used in RNN
-    batch_size : Number of examples in each batch
+    batchSize : Number of examples in each batch
     learnRate  : Learning rate coefficient
     model      : Which model to use ...
                     '__multirnn_model__' : RNN(glob+netw) + calcium dynamic
@@ -116,19 +116,22 @@ class actConnGraph(object):
     def __init__(self, feat_dict ):
 
         #Default model parameters
-        defaults = { 'nhid_glob': 5,   'n_input':99, 'seq_len':100, 'nhid_netw': 99, 
-                     'learnRate': 0.001, 'n_out':99, 'actfct': tf.tanh, 'batch_size':50,
-                     'model': '__multirnn_model__'}       
+        defaults = {  'learnRate': 0.0001, 'nbIters':10000, 'batchSize': 50, 
+                      'dispStep'  :200, 'model': '__multirnn_model__',
+                      'actfct':tf.tanh,'seqLen':10, 'method':1, 't2Dist':1   }      
 
         #Verifying if all inputs are provided in dictionnary and adding to object
         for key, val in defaults.items():
              if not key in feat_dict:
                 setattr(self, key, val)
-             else:
-                setattr(self,key,feat_dict[key])
+
+        #Assigining attributes from feat_dict
+        for key, val in feat_dict.items():
+                setattr(self, key, val)
+
 
         #Total number of hidden units
-        self.nhid = self.nhid_netw + self.nhid_glob
+        self.nhid = self.nhidNetw + self.nhidGlob
 
         #Specifying model
         model = getattr(self, self.model)
@@ -138,14 +141,14 @@ class actConnGraph(object):
         with graph.as_default():    
 
             #Variable placeholders 
-            self._T1    = tf.placeholder("float", [None, self.seq_len, self.n_input]) # Input at time t
-            self._T2    = tf.placeholder("float", [None, self.n_input])               # Input at time t+1
-            self.initG  = tf.placeholder("float", [None, self.nhid_glob])             # State of global cell
+            self._T1    = tf.placeholder("float", [None, self.seqLen, self.nInput]) # Input at time t
+            self._T2    = tf.placeholder("float", [None, self.nInput])               # Input at time t+1
+            self.initG  = tf.placeholder("float", [None, self.nhidGlob])             # State of global cell
             self.initNG = tf.placeholder("float", [None, self.nhid])                  # State of netw+global cell
             #self.learnRate = tf.placeholder("float", [])                             # Learning rate for adaptive LR
 
             #Shape data
-            _Z1 = shapeData(self,self._T1)
+            _Z1 = shapeData(self._T1, self.seqLen, self.nInput)
 
             # --------------------------------------------------- Model --------------------------------------------------- #
             
@@ -161,8 +164,8 @@ class actConnGraph(object):
             # Define loss and optimizer
             
             #Cost for connectivity in the network cell (H->H)
-            #self.sparsC  = tf.add_n([ tf.nn.l2_loss( self.vnames['netw_IH_HH/BasicRNNCell/Linear/Matrix:0'][self.nhid_netw:,:] ) ])
-            self.sparsC  = tf.add_n([tf.abs(v) for v in self.variables]) 
+            #self.sparsC  = tf.add_n([ tf.nn.l2_loss( self.vnames['netw_IH_HH/BasicRNNCell/Linear/Matrix:0'][self.nhidNetw:,:] ) ])
+            self.sparsC  = tf.add_n([tf.reduce_sum(tf.abs(v)) for v in self.variables]) 
             
             #Sum of square distance
             self.ngml = tf.reduce_sum(tf.pow(self._Z2 - self._T2, 2))/10
@@ -170,7 +173,7 @@ class actConnGraph(object):
             self.ngprior = 0
 
             #Total Cost
-            self.cost = (self.ngml + self.ngprior + self.sparsC) / (2*self.batch_size)
+            self.cost = (self.ngml + self.ngprior + self.sparsC) / (2*self.batchSize)
 
             #To test the precision of the network
             self.precision = tf.reduce_mean(tf.pow(self._Z2 - self._T2, 2))
@@ -194,25 +197,25 @@ class actConnGraph(object):
         #Defining masks
         self.masks = {'1ng_IH_HH': 
                           np.vstack([ 
-                                     np.ones([self.n_input, self.nhid],  dtype='float32'),
-                                     np.hstack([ np.ones( [self.nhid_netw]*2,        dtype='float32')   
-                                          -np.identity(self.nhid_netw,               dtype='float32'),
-                                           np.zeros([self.nhid_netw,self.nhid_glob], dtype='float32') ]),
-                                     np.ones([self.nhid_glob,self.nhid], dtype='float32')
+                                     np.ones([self.nInput, self.nhid],  dtype='float32'),
+                                     np.hstack([ np.ones( [self.nhidNetw]*2,       dtype='float32')   
+                                          -np.identity(self.nhidNetw,              dtype='float32'),
+                                           np.zeros([self.nhidNetw,self.nhidGlob], dtype='float32') ]),
+                                     np.ones([self.nhidGlob,self.nhid], dtype='float32')
                                     ]),
 
-                      '2ng_IH_HH': tf.random_normal([self.n_input + self.nhid, self.nhid],
+                      '2ng_IH_HH': tf.random_normal([self.nInput + self.nhid, self.nhid],
                                                     0.01) * self.learnRate
                      } 
 
         #Defining weights
-        self.weights = { 'ng_H0_W' : weightInit([self.nhid,self.n_out], 'ng_HO_W' ) }
+        self.weights = { 'ng_H0_W' : weightInit([self.nhid,self.nOut], 'ng_HO_W' ) }
 
         #Defining biases
-        self.biases  = { 'ng_H0_B' : weightInit(self.n_out, 'ng_H0_B') }  
+        self.biases  = { 'ng_H0_B' : weightInit(self.nOut, 'ng_H0_B') }  
 
         #Defining other variables
-        self.alpha   = tf.get_variable("alpha",[self.n_input,1])
+        self.alpha   = tf.get_variable("alpha",[self.nInput,1])
 
         #Network + Global dynamic cell (concatenated)
         ngCell = rnn_cell.BasicRNNCell(self.nhid, activation= self.actfct)
@@ -225,7 +228,7 @@ class actConnGraph(object):
         Z2 = 0  #Prediction
 
         with tf.variable_scope("ng_IH_HH") as scope:
-            for i in range(self.seq_len):
+            for i in range(self.seqLen):
 
                 #Reusing variables for RNN
                 if i == 1:
@@ -251,24 +254,24 @@ class actConnGraph(object):
 
         #Defining the weights
         self.weights = { 
-                         'netw_dir_W' : weightInit([self.n_input]*2,             'netw_dir_W' ),
-                         'glob_HO_W'  : weightInit([self.nhid_glob, self.n_out], 'glob_HO_W'  )
+                         'netw_dir_W' : weightInit([self.nInput]*2,            'netw_dir_W' ),
+                         'glob_HO_W'  : weightInit([self.nhidGlob, self.nOut], 'glob_HO_W'  )
                         } 
 
         #Defining the biases
         self.biases =  {  
-                         'netw_dir_B' : weightInit(self.n_out, 'netw_HO_B'),
-                         'glob_HO_B'  : weightInit(self.n_out, 'glob_HO_B') 
+                         'netw_dir_B' : weightInit(self.nOut, 'netw_HO_B'),
+                         'glob_HO_B'  : weightInit(self.nOut, 'glob_HO_B') 
                         } 
 
         #Defining masks
         self.masks   = {
-                         '1netw_dir_M' : np.ones([self.nhid_netw]*2,  dtype= 'float32') - 
-                                         np.identity(self.nhid_netw,  dtype= 'float32')
+                         '1netw_dir_M' : np.ones([self.nhidNetw]*2,  dtype= 'float32') - 
+                                         np.identity(self.nhidNetw,  dtype= 'float32')
                         } 
 
         #Global dynamic cell
-        globCell = rnn_cell.BasicRNNCell(self.nhid_glob, activation = self.actfct) #No initialization required
+        globCell = rnn_cell.BasicRNNCell(self.nhidGlob, activation = self.actfct) #No initialization required
 
         #Global dynamic cell output
         globOut, globState = rnn.rnn(globCell, _Z1, initial_state=initG, dtype=tf.float32, scope = 'glob_IH_HH')
@@ -368,7 +371,7 @@ class actConnGraph(object):
         return [Vars[i].assign(tempM[i]) for i in vidxAll]
 
 
-    def launchGraph(self, inputData, savepath = '_.ckpt', display_step = 100, niters = 5000):
+    def launchGraph(self, inputData, savepath = '_.ckpt', dispStep = 100, nbIters = 5000):
         # Launch the graph
         #   Arguments ... 
         #       inputData ~ Has to be a list of 4 elements : Training_t1, training_t2
@@ -397,17 +400,17 @@ class actConnGraph(object):
 
             stepTr  = 0 #Training steps
             stepBat = 0 #Testing steps
-            Ginit   = np.zeros((self.batch_size, self.nhid_glob)) # Global state initialization
-            NGinit  = np.zeros((self.batch_size, self.nhid))
+            Ginit   = np.zeros((self.batchSize, self.nhidGlob)) # Global state initialization
+            NGinit  = np.zeros((self.batchSize, self.nhid))
 
             # Keep training until reach max iterations
-            while stepTr < niters:
+            while stepTr < nbIters:
 
-                if stepTr % display_step == 0:
+                if stepTr % dispStep == 0:
                     T1_batch,T2_batch = batchCreation(T1, T2, 
-                                                      niters     = display_step, 
-                                                      batch_size = self.batch_size, 
-                                                      seq_len    = self.seq_len)
+                                                      nbIters   = dispStep, 
+                                                      batchSize = self.batchSize, 
+                                                      seqLen    = self.seqLen)
 
                 stepBat = 0 #for batches based on display step
 
@@ -425,8 +428,8 @@ class actConnGraph(object):
                 sess.run(self.masking)
 
 
-                if stepTr % display_step == 0:
-                    testX,testY = batchCreation(Te1, Te2, niters=1, batch_size=self.batch_size, seq_len=self.seq_len)
+                if stepTr % dispStep == 0:
+                    testX,testY = batchCreation(Te1, Te2, nbIters=1, batchSize=self.batchSize, seqLen=self.seqLen)
 
                     #Dictionnary for plotting training progress
                     feedDict_Tr = { self._T1    : T1_batch[stepBat,...], 
@@ -447,7 +450,7 @@ class actConnGraph(object):
                                                                    self.initNG : NGinit  }) 
 
                     #Printing progress 
-                    print("Iter: " + str(stepTr) + "/" + str(niters) +   "  ~  L2 Loss: "     + "{:.6f}".format(trFit) +
+                    print("Iter: " + str(stepTr) + "/" + str(nbIters) +   "  ~  L2 Loss: "     + "{:.6f}".format(trFit) +
                "  ~  Sparsity loss: " + "{:.6f}".format(trSpars) + "        |  Testing fit: " + "{:.6f}".format(teFit))
 
 
@@ -468,7 +471,7 @@ class actConnGraph(object):
         ''' Will plot the real values and the fit of the model on top of it
              in order to evaluate the fit of the model.
 
-             data: data to test. Must be of shape [nb_ex , seq_len , nb_units]
+             data: data to test. Must be of shape [nb_ex , seqLen , nb_units]
              ckpt: checkpoint file, including full path '''
 
         #Passing data in model
@@ -479,7 +482,7 @@ class actConnGraph(object):
 
                 nEx  = T1.shape[0]
 
-                Ginit  = np.zeros((nEx, self.nhid_glob),dtype='float32') # Global state initialization
+                Ginit  = np.zeros((nEx, self.nhidGlob),dtype='float32') # Global state initialization
                 NGinit = np.zeros((nEx, self.nhid))
 
                 _Z2 = sess.run(self._Z2, feed_dict = { self._T1    : T1,
@@ -526,7 +529,7 @@ class actConnGraph(object):
                 
                 #Plotting network H->H connectivity matrix only
                 if v.name == 'netw_IH_HH/BasicRNNCell/Linear/Matrix:0':
-                      plt.imshow(self.evalVars[idx][self.nhid_netw:,:], aspect = 'auto', interpolation = 'None')
+                      plt.imshow(self.evalVars[idx][self.nhidNetw:,:], aspect = 'auto', interpolation = 'None')
                 else:
                       plt.imshow(self.evalVars[idx], aspect = 'auto', interpolation = 'None') 
                         
