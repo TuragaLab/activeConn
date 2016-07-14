@@ -9,19 +9,19 @@ import tensorflow as tf
 
 pi = math.pi
 
-def batchCreation(inputs,outputs, niters=100, batch_size=50, seq_len=50):
-    # Will create a batch of size (niters,batch_size,n_steps,nInput) with random
+def batchCreation(inputs,outputs, nbIters=100, batchSize=50, seqLen=50):
+    # Will create a batch of size (nbIters,batchSize,n_steps,nInput) with random
     # sequences drawn everytime is it called (i.e. potential redraw). 
     
-    nSeq   = inputs.shape[0] - seq_len #Number of sequences
-    nInput = inputs.shape[2]           #Number of inputs
-
-    nSeqB  = niters*batch_size #Total number of sequences for all batches
+    nSeq   = inputs.shape[1] - seqLen  # Number of sequences
+    nInput = inputs.shape[2]           # Number of inputs
+    
+    nSeqB  = nbIters*batchSize #Total number of sequences for all batches
 
     #Shuffling sequences
     if nSeqB == nSeq:
         perms = np.random.permutation(nSeq) 
-        Y1    =  inputs[perms,...]
+        Y1    =  inputs[:,perms,:]
         Y2    = outputs[perms,:]
 
     elif nSeqB > nSeq:
@@ -29,24 +29,26 @@ def batchCreation(inputs,outputs, niters=100, batch_size=50, seq_len=50):
         for i in np.arange(np.floor(nLoop)):
             perms = np.random.permutation(nSeq)
             if not i:
-                Y1 =  inputs[perms,...]
+                Y1 =  inputs[:,perms,:]
                 Y2 = outputs[perms,:]
             else:
-                Y1 = np.vstack((Y1, inputs[perms,...]))
+                Y1 = np.vstack((Y1, inputs[:,perms,:]))
                 Y2 = np.vstack((Y2,outputs[perms,:]))
 
         #Residuals
         if nSeqB%nSeq > 0:
             perms = np.random.permutation(nSeq)
-            Y1    = np.vstack((Y1, inputs[perms[np.arange(nSeqB%nSeq)],...]))
+
+            Y1    = np.hstack((Y1, inputs[:,perms[np.arange(nSeqB%nSeq)],:]))
             Y2    = np.vstack((Y2,outputs[perms[np.arange(nSeqB%nSeq)],:]))
 
     else: 
         perms  = np.random.permutation(nSeq)
-        Y1     =  inputs[perms[np.arange(nSeqB%nSeq),...]]
-        Y2     = outputs[perms[np.arange(nSeqB%nSeq)],:]
-        
-    return Y1.reshape([niters,batch_size,seq_len,nInput]), Y2.reshape([niters,batch_size,nInput])
+
+        Y1 = inputs[:,perms[np.arange(nSeqB%nSeq)],:]
+        Y2 =  outputs[perms[np.arange(nSeqB%nSeq)],:]
+
+    return Y1.reshape([nbIters,batchSize,seqLen,nInput]), Y2.reshape([nbIters,batchSize,nInput])
 
 
 def calcResponse(data, stimFrames, stimOrder, nf = 12, nfb = 1):
@@ -275,7 +277,7 @@ def loadHDF5Dataset(path,field,dataset):
     return data
 
 
-def meanSTA(data,frames, nstim=8, nf= 241):
+def meanSTA(data, frames, nstim=8, nf= 241):
     ''' Calculate the calcium triggered average
         
         nstim : number of stimuli presented
@@ -308,23 +310,23 @@ def meanSTA(data,frames, nstim=8, nf= 241):
     return sumSTA/occur  
 
 
-def prepare_data(data, seq_len, method = 1, t2_dist = 1):     # look back T steps max
+def prepare_data(data, seqLen, method = 1, t2Dist = 1):     # look back T steps max
     ''' Putting the data in the right format
 
-        seq_len : number of time points 
+        seqLen : number of time points 
          method : 0 = standardization
                   1 = normalization
                   2 = normalization with value shifted to positive
                   3 = standardization + normalization
-        t2_dist : Number of timesteps you are tring to predict '''
+        t2Dist : Number of timesteps you are tring to predict '''
 
     #Correcting for python index
-    t2_dist = t2_dist - 1 
+    t2Dist = t2Dist - 1 
 
     #Dimensions
     data_num  = data.shape[1]                      # Number of time points
     data_size = data.shape[0]                      # Number of units
-    numSeq    = data_num - (seq_len + t2_dist + 1) # Number of sequences
+    numSeq    = data_num - (seqLen + t2Dist + 1) # Number of sequences
     
     if method == 0:
         # Standardizing
@@ -351,12 +353,12 @@ def prepare_data(data, seq_len, method = 1, t2_dist = 1):     # look back T step
         data = data/np.absolute(data).max(axis=1).reshape(-1, 1)
     
     # Label vectors (T2)
-    alOutput  = data[:,seq_len+t2_dist:-1]                 # Take the seq_len+1 vector as output
+    alOutput  = data[:,seqLen+t2Dist:-1]                 # Take the seqLen+1 vector as output
 
     # Input vectors (T1)
-    alInput   = np.zeros((seq_len, data_size, numSeq))
+    alInput   = np.zeros((seqLen, data_size, numSeq))
     for i in range(numSeq):
-        alInput[:,:,i] = data[:, i:(i+seq_len)].T  # seq_len * 10x1 vectors before T+1 (exclusive) 
+        alInput[:,:,i] = data[:, i:(i+seqLen)].T  # seqLen * 10x1 vectors before T+1 (exclusive) 
  
     #Putting in float32
     alInput  = np.float32(alInput)
@@ -425,16 +427,16 @@ def remBaseline(data, percentile = 10, binsize = 1000):
     return dataBL, baseline
 
 
-def shapeData(self,_T1):
-    #Puts batch data into the following format : seq_len x [batch_size,n_input]
+def shapeData(_T1, seqLen, nInput):
+    #Puts batch data into the following format : seqLen x [batchSize,n_input]
     #Taking the inputs
     _Z1 = tf.identity(_T1)
 
     # Reshape to prepare input to hidden activation
-    _Z1 = tf.reshape(_Z1, [-1, self.n_input]) # (n_steps*batch_size, n_input)
+    _Z1 = tf.reshape(_Z1, [-1, nInput]) # (n_steps*batchSize, n_input)
 
     # Split data because rnn cell needs a list of inputs for the RNN inner loop
-    _Z1 = tf.split(0, self.seq_len, _Z1) # n_steps * (batch_size, n_input)
+    _Z1 = tf.split(0, seqLen, _Z1) # n_steps * (batchSize, n_input)
     return _Z1
 
 
