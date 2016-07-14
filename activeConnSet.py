@@ -42,7 +42,7 @@ def activeConn(paramDict, data, run = True):
 	PATH
 	----------
 	dataset  : Dataset name to load
-	mPath    : Main path containing data & ckpt folder and config files
+	_mPath   : Main path containing data & ckpt folder and config files
 	saveName : Name of checkpoint to be saved
 		   	  A checkpoint will also be save as '/tmp/backup.ckpt'
 
@@ -79,9 +79,9 @@ def activeConn(paramDict, data, run = True):
 	nInput = data.shape[0] # Number of units in data
 
 	#Default model parameters
-	pDict = {  'dataset':'FR_RNN.mat', 'mPath': expanduser("~") + '/.activeConn/',
+	pDict = {  'dataset':'FR_RNN.mat', '_mPath': expanduser("~") + '/.activeConn/',
 	      	   'saveName': 'ckpt.ckpt', 'learnRate': 0.0001, 'nbIters':10000,
-	           'batchSize': 50, 'dispStep':200, 'model': '__multirnn_model__',
+	           'batchSize': 50, 'dispStep':200, 'model': '__NGCmodel__',
 	           'actfct':tf.tanh,'seqLen':10, 'method':1, 't2Dist':1               }       
 
 	#Updatating pDict with input dictionnary
@@ -99,7 +99,7 @@ def activeConn(paramDict, data, run = True):
 					 ' need to be equal.')
 
 	# Path
-	savepath = pDict['mPath'] + 'checkpoints/' + pDict['saveName'] # Checkpoint save path
+	savepath = pDict['_mPath'] + 'checkpoints/' + pDict['saveName'] # Checkpoint save path
 
 
 	# Graph build and execution --------------------------------------------------------
