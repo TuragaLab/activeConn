@@ -13,7 +13,7 @@ from activeConn.tools  import *
 import tensorflow as tf
 
 
-def activeConn(paramDict):
+def activeConn(paramDict, data, run = True):
 	'''
 	Bayesian RNN for Active Connectomics Learning
 	       
@@ -27,7 +27,8 @@ def activeConn(paramDict):
 
 	paramDict: Contains all the parameters passed into graph,
 		  	   which will be unpacked and added to class attributes
-
+	data     : Data matrix of size (nb_input_units x time)
+	run      : Will run the model or not
 	_____________________________________________________________
 
 							PARAMETERS
@@ -57,11 +58,11 @@ def activeConn(paramDict):
 	model      : Model name to use
 				   __multirnn_model__ : 
 	actfct     : Model's activation function for NN 
-	nInput   * : Number of inputs  units
+	nInput     : Number of inputs  units
 	seqLen     : Timeserie length for RNN 
 	nhidGlob * : Number of hidden units in global  dynamic cell
-	nhidNetw * : Number of hidden units in network dynamic cell
-	nOut     * : Number of output units
+	nhidNetw   : Number of hidden units in network dynamic cell
+	nOut       : Number of output units
 
 	DATA
 	---------
@@ -75,43 +76,52 @@ def activeConn(paramDict):
 	'''
 
 	# Parameters attribution ---------------------------------------------------------
+	nInput = data.shape[0] # Number of units in data
 
 	#Default model parameters
 	pDict = {  'dataset':'FR_RNN.mat', 'mPath': expanduser("~") + '/.activeConn/',
 	      	   'saveName': 'ckpt.ckpt', 'learnRate': 0.0001, 'nbIters':10000,
 	           'batchSize': 50, 'dispStep':200, 'model': '__multirnn_model__',
-	           'acffct':tf.tanh,'seqLen':10, 'method':1, 't2Dist':1               }       
+	           'actfct':tf.tanh,'seqLen':10, 'method':1, 't2Dist':1               }       
 
 	#Updatating pDict with input dictionnary
 	pDict.update(paramDict)
 
+	#Default for neural network architecture
+	if 'nInput'   not in pDict: pDict[ 'nInput'   ] = nInput
+	if 'nhidNetw' not in pDict: pDict[ 'nhidNetw' ] = nInput
+	if 'nOut'     not in pDict: pDict[ 'nOut'     ] = nInput
+
+	#Verifying if data is consistent with model
+	if nInput != pDict['nInput']:
+		raise ValueError('Number of input units in the data ({0})'.format(nInput) +
+					 ' and number of input units in the model ({0})'.format(pDict['nInput']) +
+					 ' need to be equal.')
+
 	# Path
 	savepath = pDict['mPath'] + 'checkpoints/' + pDict['saveName'] # Checkpoint save path
-	dPath    = pDict['mPath'] + 'data/'        + pDict['dataset']  # Dataset path
+
 
 	# Graph build and execution --------------------------------------------------------
 
-	# Loading data 
-	print('Loading Data      ...')
-	data = loadmat(dPath)
-
 	#Formatting data
-	dataDict = prepare_data(
-						pDict['data'], 
-						pDict['seq_len'], 
-						method  = pDict['method'], 
-						t2_dist = pDict['t2_dist']
+	dataDict = prepare_data(data, 
+						pDict['seqLen'], 
+						method = pDict['method'], 
+						t2Dist = pDict['t2Dist']
 						)
 
 	#Build graph
 	print('Building Graph    ...')
-	graph = actConnGraph(params_dict)
+	graph = actConnGraph(pDict)
 
 	#Launch Graph
-	print('Launching Session ...')
-	graph.launchGraph( pDict,
-					   niters       = pDict['nbIters'], 
-					   display_step = pDict['dispStep'], 
-	                   savepath     = savepath )
+	if run:
+		print('Launching Session ...')
+		graph.launchGraph( dataDict,
+		  				   nbIters  = pDict['nbIters'], 
+		  				   dispStep = pDict['dispStep'], 
+		                   savepath = savepath )
 
-	return graph
+	return graph, dataDict
+
