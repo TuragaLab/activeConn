@@ -9,44 +9,54 @@ import tensorflow as tf
 
 pi = math.pi
 
-def batchCreation(inputs,outputs, nbIters=100, batchSize=50, seqLen=50):
+def batchCreation(inputs,outputs, perm=False, nbIters=100, batchSize=50, seqLen=50):
     # Will create a batch of size (nbIters,batchSize,n_steps,nInput) with random
     # sequences drawn everytime is it called (i.e. potential redraw). 
     
     nSeq   = inputs.shape[1] - seqLen  # Number of sequences
     nInput = inputs.shape[2]           # Number of inputs
-    
-    nSeqB  = nbIters*batchSize #Total number of sequences for all batches
 
-    #Shuffling sequences
-    if nSeqB == nSeq:
-        perms = np.random.permutation(nSeq) 
-        Y1    =  inputs[:,perms,:]
-        Y2    = outputs[perms,:]
+    if perm:
+        # Will sample sequences with permutation, which will avoid sampling the same
+        # sample multiple times in the same batch
+        nSeqB  = nbIters*batchSize #Total number of sequences for all batches
 
-    elif nSeqB > nSeq:
-        nLoop = nSeqB/nSeq #Number of time go through all sequences
-        for i in np.arange(np.floor(nLoop)):
-            perms = np.random.permutation(nSeq)
-            if not i:
-                Y1 =  inputs[:,perms,:]
-                Y2 = outputs[perms,:]
-            else:
-                Y1 = np.vstack((Y1, inputs[:,perms,:]))
-                Y2 = np.vstack((Y2,outputs[perms,:]))
+        #Shuffling sequences
+        if nSeqB == nSeq:
+            perms = np.random.permutation(nSeq) 
+            Y1    =  inputs[:,perms,:]
+            Y2    = outputs[perms,:]
 
-        #Residuals
-        if nSeqB%nSeq > 0:
-            perms = np.random.permutation(nSeq)
+        elif nSeqB > nSeq:
+            nLoop = nSeqB/nSeq #Number of time go through all sequences
+            for i in np.arange(np.floor(nLoop)):
+                perms = np.random.permutation(nSeq)
+                if not i:
+                    Y1 =  inputs[:,perms,:]
+                    Y2 = outputs[perms,:]
+                else:
+                    Y1 = np.vstack((Y1, inputs[:,perms,:]))
+                    Y2 = np.vstack((Y2,outputs[perms,:]))
 
-            Y1    = np.hstack((Y1, inputs[:,perms[np.arange(nSeqB%nSeq)],:]))
-            Y2    = np.vstack((Y2,outputs[perms[np.arange(nSeqB%nSeq)],:]))
+            #Residuals
+            if nSeqB%nSeq > 0:
+                perms = np.random.permutation(nSeq)
 
-    else: 
-        perms  = np.random.permutation(nSeq)
+                Y1    = np.hstack((Y1, inputs[:,perms[np.arange(nSeqB%nSeq)],:]))
+                Y2    = np.vstack((Y2,outputs[perms[np.arange(nSeqB%nSeq)],:]))
 
-        Y1 = inputs[:,perms[np.arange(nSeqB%nSeq)],:]
-        Y2 =  outputs[perms[np.arange(nSeqB%nSeq)],:]
+        else: 
+            perms  = np.random.permutation(nSeq)
+
+            Y1 = inputs[:,perms[np.arange(nSeqB%nSeq)],:]
+            Y2 =  outputs[perms[np.arange(nSeqB%nSeq)],:]
+
+    else:
+
+        randidx = np.random.randint(0,nSeq,batchSize*nbIters)
+
+        Y1 = inputs[:,randidx,:]
+        Y2 =  outputs[randidx,:]
 
     return Y1.reshape([nbIters,batchSize,seqLen,nInput]), Y2.reshape([nbIters,batchSize,nInput])
 
