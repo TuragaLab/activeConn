@@ -111,7 +111,7 @@ class actConnGraph(object):
                 ....
 
     '''   
-     # ------------------------------------------------- Variables ------------------------------------------------- #
+    # ------------------------------------------------- Variables ------------------------------------------------- #
 
     def __init__(self, feat_dict ):
 
@@ -141,8 +141,8 @@ class actConnGraph(object):
         with graph.as_default():    
 
             #Variable placeholders 
-            self._T1    = tf.placeholder("float", [None, self.seqLen, self.nInput]) # Input at time t
-            self._T2    = tf.placeholder("float", [None, self.nInput])              # Input at time t+1
+            self._T1 = tf.placeholder("float", [None, self.seqLen, self.nInput]) # Input at time t
+            self._T2 = tf.placeholder("float", [None, self.nInput])              # Input at time t+1
             #self.learnRate = tf.placeholder("float", [])                           # Learning rate for adaptive LR
 
             #Shape data
@@ -187,7 +187,10 @@ class actConnGraph(object):
 
             self.saver = tf.train.Saver()
 
+            self.allops = [op.outputs for op in tf.get_default_graph().get_operations()]
+
         self.graph = graph
+
 
     def __NGCmodel__(self,_Z1):
         # RNN(Network+Global cells) & Calcium dynamic
@@ -491,7 +494,8 @@ class actConnGraph(object):
 
                 nEx  = T1.shape[0]
 
-                _Z2 = sess.run(self._Z2, feed_dict = { self._T1 : T1 })
+                #T1 is transposed since it does not go through batch creation function
+                _Z2 = sess.run(self._Z2, feed_dict = { self._T1 : T1.transpose((1,0,2)) })
 
         #Plotting test set
         plt.figure(figsize=(20, 5))
