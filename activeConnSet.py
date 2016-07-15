@@ -17,9 +17,9 @@ def activeConn(paramDict, data, run = True):
 	'''
 	Bayesian RNN for Active Connectomics Learning
 	       
-	 Bayesian neural network that allows the prediction of causal 
-	 connectivity coupled with pertubation of the system for 
-	 stronger inferences. 
+		 Bayesian neural network that allows the 
+		 prediction of causal connectivity coupled with 
+		 pertubation of the system for stronger inferences. 
 	_______________________________________________________________
 
 							ARGUMENTS
@@ -29,10 +29,10 @@ def activeConn(paramDict, data, run = True):
 		  	   which will be unpacked and added to class attributes
 	data     : Data matrix of size (nb_input_units x time)
 	run      : Will run the model or not
-	_____________________________________________________________
+	_______________________________________________________________
 
 							PARAMETERS
-	________________________________________________________________ 
+	_______________________________________________________________
 
 	Parameters that could make the models to fail are usually not 
 	included in the defaults parameters in order to avoid subtle bugs.
@@ -54,7 +54,7 @@ def activeConn(paramDict, data, run = True):
 	dispStep  : Number of iterations before display of cost information
 
 	NETWORK
-	----------
+	------------
 	model      : Model name to use
 				   __multirnn_model__ : 
 	actfct     : Model's activation function for NN 
