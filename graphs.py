@@ -5,6 +5,7 @@ import numpy             as np
 import matplotlib.pyplot as plt
 
 from activeConn.tools import *
+from activeConn       import activeConnMain as ACM
 
 import tensorflow as tf
 from tensorflow.python.ops             import rnn, rnn_cell
@@ -117,18 +118,18 @@ class actConnGraph(object):
 
         #Default model parameters
         defaults = {  'learnRate': 0.0001, 'nbIters':10000, 'batchSize': 50, 
-                      'dispStep'  :200, 'model': '__multirnn_model__',
+                      'dispStep'  :200, 'model': '__NGCmodel__',
                       'actfct':tf.tanh,'seqLen':10, 'method':1, 't2Dist':1   }      
 
-        #Verifying if all inputs are provided in dictionnary and adding to object
-        for key, val in defaults.items():
-             if not key in feat_dict:
-                setattr(self, key, val)
+        #Updating default params with feat_dict
+        defaults.update(feat_dict)
 
         #Assigining attributes from feat_dict
-        for key, val in feat_dict.items():
+        for key, val in defaults.items():
                 setattr(self, key, val)
 
+        #Saving dictionnary
+        self._pDict = defaults
 
         #Total number of hidden units
         self.nhid = self.nhidNetw + self.nhidGlob
@@ -196,7 +197,7 @@ class actConnGraph(object):
         # RNN(Network+Global cells) & Calcium dynamic
 
         #Initialization
-        ngO = np.zeros((self.batchSize, self.nhid),dtype='float32') # Netw+Glob state initialization
+        ngO = tf.zeros((self.batchSize, self.nhid),dtype='float32',name = 'ng0') # Netw+Glob state initialization
         Z2  = 0                                     # Model prediction
 
         #Defining masks
@@ -464,58 +465,6 @@ class actConnGraph(object):
             print('\nTotal time:  ' + str(datetime.timedelta(seconds = time.time()-t)))
             self.evalVars = [v.eval() for v in tf.trainable_variables()] 
 
-
-    def plotfit(self, T1, T2, ckpt='/tmp/backup.ckpt'):
-        ''' Will plot the real values and the fit of the model on top of it
-             in order to evaluate the fit of the model.
-
-             data: data to test. Must be of shape [nb_ex , seqLen , nb_units]
-             ckpt: ckpt can either be a full path to the ckpt, or just the ckpt name.
-                        If only the name is provided, plotfit will look into activeConn/checkpoints/
-                        If agument not provided, plotfit will use the backup ckpt in /tmp.
-
-
-             '''
-
-        # To adjust for the batchsize of the fitting dataset, we need to 
-        # assign self.batchSize for the total number of sequences in the fit set.
-        # The real batchsize value is reassigned at the end.
-        tempBatchSize  = np.copy(self.batchSize)  # Holding reacl batchSize value
-        self.batchSize = T1.shape[1]        
-
-        if ckpt[0] != '/':
-            ckpt = self._mPath + 'checkpoints/' + ckpt
-
-        #Passing data in model
-        with tf.Session(graph=self.graph) as sess:
-            self.saver.restore(sess, ckpt)
-            with tf.variable_scope("") as scope:
-                scope.reuse_variables()
-
-                nEx  = T1.shape[0]
-
-                #T1 is transposed since it does not go through batch creation function
-                _Z2 = sess.run(self._Z2, feed_dict = { self._T1 : T1.transpose((1,0,2)) })
-
-        #Plotting test set
-        plt.figure(figsize=(20, 5))
-        plt.imshow(T2.T, aspect='auto') ; plt.title('Real Data')
-        plt.xlabel('Time (frames)') ; plt.ylabel('Neurons') ; plt.colorbar()
-
-        #Plotting prediction on test set
-        plt.figure(figsize=(20, 5))
-        plt.imshow(_Z2.T, aspect='auto') ; plt.title('Model Predictions')
-        plt.ylabel('Neurons') ; plt.xlabel('Time (frames)') ; plt.colorbar()
-
-        #Printing the difference between data and prediction
-        plt.figure(figsize=(20, 5))
-        plt.imshow((T2-_Z2).T, aspect='auto') ; plt.title('Real - Model')
-        plt.ylabel('Neurons') ; plt.xlabel('Time (frames)') ; plt.colorbar()
-
-        plt.show()
-
-        self.batchSize = tempBatchSize
-
   
     def showVars(self):
         #Will plot all variables
@@ -557,8 +506,64 @@ class actConnGraph(object):
             idx   +=1
 
 
-#    def sensitivityA(self, data, ckpt='/tmp/backup.ckpt'):
 
+def plotfit(paramFile, nbPoints = 4000, ckpt='/tmp/backup.ckpt'):
+    ''' Will plot the real values and the fit of the model on top of it
+         in order to evaluate the fit of the model.
+        
+         paramFile : Parameter file to run (in activeConnMain)
+         nbPoints  : number of time points to pick from the fit dataset 
+         ckpt      : ckpt can either be a full path to the ckpt, or just the ckpt name.
+                      If only the name is provided, plotfit will look into activeConn/checkpoints/
+                      If agument not provided, plotfit will use the backup ckpt in /tmp.
+
+    '''
+
+    #Recovering main file function
+    main = getattr(ACM, paramFile)
+
+    #Building graph
+    pDict = {'batchSize' : nbPoints}
+    graphFit, dataDict = main(pDict, run = False)
+
+    T1 = dataDict['Fit1'][:,:nbPoints,:] # Input
+    T2 = dataDict['Fit2'][:nbPoints,:]   # Label
+
+    #Loading ckpt if checkpoint name only is provided
+    if ckpt[0] != '/':
+        ckpt = graphFit._mPath + 'checkpoints/' + ckpt
+
+    #Passing data in model
+    with tf.Session(graph=graphFit.graph) as sess:
+        graphFit.saver.restore(sess, ckpt)
+        with tf.variable_scope("") as scope:
+            scope.reuse_variables()
+
+            nEx  = T1.shape[0]
+
+            #T1 is transposed since it does not go through batch creation function
+            _Z2 = sess.run(graphFit._Z2, feed_dict = { graphFit._T1 : T1.transpose((1,0,2)) })
+
+    #Plotting test set
+    plt.figure(figsize=(20, 5))
+    plt.imshow(T2.T, aspect='auto') ; plt.title('Real Data')
+    plt.xlabel('Time (frames)') ; plt.ylabel('Neurons') ; plt.colorbar()
+
+    #Plotting prediction on test set
+    plt.figure(figsize=(20, 5))
+    plt.imshow(_Z2.T, aspect='auto') ; plt.title('Model Predictions')
+    plt.ylabel('Neurons') ; plt.xlabel('Time (frames)') ; plt.colorbar()
+
+    #Printing the difference between data and prediction
+    plt.figure(figsize=(20, 5))
+    plt.imshow((T2-_Z2).T, aspect='auto') ; plt.title('Real - Model')
+    plt.ylabel('Neurons') ; plt.xlabel('Time (frames)') ; plt.colorbar()
+
+    plt.show()
+
+
+
+#    def sensitivityA(self, data, ckpt='/tmp/backup.ckpt'):
 
 
 
