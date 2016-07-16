@@ -13,14 +13,14 @@ from tensorflow.python.ops             import variable_scope        as vs
 from tensorflow.python.ops.constant_op import constant  as const
 
 
-    '''
+'''
     _________________________________________________________________________
 
                                  MODELS DESCRIPTION
     _________________________________________________________________________
 
   
-  
+
     '__NGCmodel__' : RNN(Network&Globalcell) + Calcium dynamic
 
                     1. RNN( The global & network cell )
@@ -56,12 +56,12 @@ from tensorflow.python.ops.constant_op import constant  as const
     
     launchGraph : Will lauch the training of the model.
 
-    plotfit     : Will plot the test set and the prediction of 
-                  the model.
 
     showVars    : Will plot the variables with imshow (matrices)
                   and plot (vectors)
 
+    plotfit     : Will plot the test set and the prediction of 
+                  the model.
 
     _________________________________________________________________________
 
@@ -82,10 +82,14 @@ from tensorflow.python.ops.constant_op import constant  as const
     
      Mask operations will be executed in the same order
 
+     '_M' should be added at the end of the name if the name in the weights 
+     dictionnary would be identical otherwise. '_W' can be added to the 
+     corresponding name variable instead of '_M' to distinguish them more
+     easily.
 
      ________________________________________________________________________
 
-    '''   
+'''   
 
 
 class actConnGraph(object):
@@ -126,9 +130,6 @@ class actConnGraph(object):
         #Saving dictionnary
         self._pDict = defaults
 
-        #Total number of hidden units
-        self.nhid = self.nhidNetw + self.nhidGlob
-
         #Specifying model
         model = getattr(self, self.model)
 
@@ -156,18 +157,21 @@ class actConnGraph(object):
             # Define loss and optimizer
             
             #Cost for connectivity in the network cell (H->H)
-            #self.sparsC  = tf.add_n([ tf.nn.l2_loss( self.vnames['netw_IH_HH/BasicRNNCell/Linear/Matrix:0'][self.nhidNetw:,:] ) ])
+            #self.sparsC  = tf.add_n([ tf.nn.l2_loss( self.vnames['ng_IH_HH/MultiRNNCell/Cell0/BasicRNNCell/Linear/Matrix:0'][self.nhidNetw:,:] ) ])
+            self.sparsC  = tf.add_n([ tf.reduce_sum( tf.abs( self.vnames['ng_IH_HH/MultiRNNCell/Cell0/BasicRNNCell/Linear/Matrix:0'][self.nhidNetw:,:] )) ])
             #self.sparsC  = tf.add_n([tf.reduce_sum(tf.abs(v)) for v in self.variables]) 
-            self.sparsC  = tf.reduce_sum(np.float32([0,1]))
+            #self.sparsC  = tf.add_n([tf.nn.l2_loss(v) for v in self.variables]) 
+            tf.nn.l2_loss
+            #self.sparsC  = tf.reduce_sum(np.float32([0,1]))
 
             #Sum of square distance
-            self.ngml = tf.reduce_sum(tf.pow(self._Z2 - self._T2, 2))/10
+            self.ngml = tf.reduce_sum(tf.pow(self._Z2 - self._T2, 2))/5
             
             #Prior
             self.ngprior = 0
 
             #Total Cost
-            self.cost = (self.ngml + self.ngprior + self.sparsC) / (2*self.batchSize)
+            self.cost = (self.ngml + self.ngprior + self.sparsC/5) / (2*self.batchSize)
 
             #To test the precision of the network
             self.precision = tf.reduce_mean(tf.pow(self._Z2 - self._T2, 2))
@@ -179,7 +183,7 @@ class actConnGraph(object):
             #self.V_add_noise = self.__VNoise__(self.variables) # List of var.assign_add(noise) for all variables
 
             #Applying masking for restained connectivity
-            self.masking = self.__masking__(self.variables)
+            self.masking = self.__masking__()
 
             #Saving graph
             self.saver = tf.train.Saver()
@@ -195,6 +199,7 @@ class actConnGraph(object):
                 ng_H0_W  : Network&Global hidden -> output (HO)
 
                 alpha    : Decay of data input at t-1
+                             0alpha_M: Contrains values between 0 and 1
 
                 ng_IH_HH : Network&Global cell Input  -> Hidden (IH) & Hidden -> Hidden (HH) 
                              
@@ -209,39 +214,41 @@ class actConnGraph(object):
                 
         '''
 
+        #Total number of hidden units
+        nhid = self.nhidNetw + self.nhidGlob
+
         #Initialization
-        ngO = tf.zeros((self.batchSize, self.nhid),dtype='float32') # Netw+Glob state initialization
+        ngO = tf.zeros((self.batchSize, nhid), dtype='float32') # Netw+Glob state initialization
         Z2  = tf.zeros(1) # Model prediction
 
         #Defining weights
         self.weights = { 
-                         'ng_H0_W' : weightInit([self.nhid,self.nOut], 'ng_HO_W' ) 
-                         'alpha'   : tf.get_variable("alpha",[self.nInput,1]) 
+                         'ng_H0_W' : weightInit([nhid,self.nOut], 'ng_HO_W' ), 
+                         'alpha_W' : tf.get_variable("alpha_W",[self.nInput,1]) 
                         }
 
         #Defining masks
         self.masks = {
                        '1ng_IH_HH': 
                           np.vstack([ 
-                                     np.ones([self.nInput, self.nhid],  dtype='float32'),
+                                     np.ones([self.nInput, nhid],  dtype='float32'),
                                      np.hstack([ np.ones( [self.nhidNetw]*2,       dtype='float32')   
                                           -np.identity(self.nhidNetw,              dtype='float32'),
                                            np.zeros([self.nhidNetw,self.nhidGlob], dtype='float32') ]),
-                                     np.ones([self.nhidGlob,self.nhid], dtype='float32')
+                                     np.ones([self.nhidGlob,nhid], dtype='float32')
                                     ]),
 
-                       '2ng_IH_HH': tf.random_normal([self.nInput + self.nhid, self.nhid],
-                                                    0.01) * self.learnRate
-                     } 
+                       '2ng_IH_HH': tf.random_normal([self.nInput + nhid, nhid],
+                                                    0.001) * self.learnRate,
+                       '0alpha_M' : tf.clip_by_value(self.weights['alpha_W'],0,1)
+                      } 
 
         #Defining biases
         self.biases = { 'ng_H0_B' : weightInit(self.nOut, 'ng_H0_B') }  
 
-        #Defining other variables
-        self.
 
         #Network + Global dynamic cell (concatenated)
-        ngCell = rnn_cell.BasicRNNCell(self.nhid, activation= self.actfct)
+        ngCell = rnn_cell.BasicRNNCell(nhid, activation= self.actfct)
         ngCell = rnn_cell.MultiRNNCell([ngCell])
 
         #RNN looping through sequence time points
@@ -259,10 +266,10 @@ class actConnGraph(object):
                 ngO, ngS = ngCell(ZD, ngO)
 
                 #NG to output cells
-                ng_Z2 = self.actfct(tf.matmul(ngO, self.weights['ng_H0_W'] + self.biases['ng_H0_B']))
+                ng_Z2 = tf.matmul(ngO, self.weights['ng_H0_W'] + self.biases['ng_H0_B'])
 
                 #Prediction with calcium dynamic
-                Z2 = tf.sigmoid(tf.matmul(_Z1[i], self.alpha) + ng_Z2)
+                Z2 = tf.sigmoid(tf.matmul(_Z1[i], self.weights['alpha_W']) + ng_Z2)
 
         return Z2
 
@@ -326,7 +333,7 @@ class actConnGraph(object):
         return V
 
 
-    def __masking__(self, Vars):
+    def __masking__(self):
         ''' Will create the operations to update the weights
 
         The first character of a mask has a meaning :
@@ -336,6 +343,8 @@ class actConnGraph(object):
                            2 : Mask is added to the respective weight
         
          Mask operations will be executed in the same order '''
+
+        Vars = self.variables
 
         #Names of variables
         vnames = [var.name[:-2] for var in Vars]
@@ -348,7 +357,6 @@ class actConnGraph(object):
 
         # Applying masks
         for m in sorted(self.masks):
-
             if m[1:] in vnames:
                 #If mask is present in variables as it is
                 vidx = vnames.index(m[1:]) #Index of variable
@@ -360,11 +368,12 @@ class actConnGraph(object):
                 elif m[0] == '2':
                     tempM[vidx] = tf.add(tempM[vidx],self.masks[m])
 
-            elif any([ (m[1:] and 'Matrix') in var for var in vnames]):
+            elif any([ (m[1:] in var and 'Matrix' in var) for var in vnames]):
+
                 #Name of mask might be part of a variable scope
 
                 for var in vnames:
-                    if (m[1:] and 'Matrix') in var:
+                    if  m[1:] in var and 'Matrix' in var:
                         vidx = vnames.index(var) #Index of variable
 
                 if   m[0] == '0':
@@ -373,8 +382,9 @@ class actConnGraph(object):
                     tempM[vidx] = tf.mul(tempM[vidx],self.masks[m])
                 elif m[0] == '2':
                     tempM[vidx] = tf.add(tempM[vidx],self.masks[m])
-            
+
             elif m[1:-1]+'W' in vnames:
+
                 #Last char might be different to prevent confusion
                 vidx = vnames.index(m[1:-1]+'W') #Index of variable
 
@@ -384,7 +394,7 @@ class actConnGraph(object):
                     tempM[vidx] = tf.mul(tempM[vidx],self.masks[m])
                 elif m[0] == '2':
                     tempM[vidx] = tf.add(tempM[vidx],self.masks[m])
-                    
+
             vidxAll.append(vidx) 
             
         vidxAll = np.unique(vidxAll) #One value per var
@@ -403,17 +413,19 @@ class actConnGraph(object):
         backupPath = '/tmp/backup.ckpt'
 
         #Unpacking data
-        T1  = inputData['Fit1']
-        T2  = inputData['Fit2'] 
+        T1  = inputData['T1']
+        T2  = inputData['T2'] 
         Te1 = inputData['Te1']
         Te2 = inputData['Te2']
 
         #Setting configs for minimum threads (small model)
-        config = tf.ConfigProto(device_count={"CPU": 56},
-                         inter_op_parallelism_threads=1,
-                         intra_op_parallelism_threads=1)
+        # config = tf.ConfigProto(device_count={"CPU": 56},
+        #                  inter_op_parallelism_threads=1,
+        #                  intra_op_parallelism_threads=1)
 
-        with tf.Session(graph=self.graph, config = config) as sess:
+        # , config = config
+
+        with tf.Session(graph=self.graph) as sess:
 
 
             #Initializing the variables
@@ -527,7 +539,7 @@ def plotfit(paramFile, nbPoints = 4000, ckpt='/tmp/backup.ckpt'):
 
     _________________________________________________________________________
 
-                                       ARGUMENTS
+                                   ARGUMENTS
     _________________________________________________________________________
         
 
