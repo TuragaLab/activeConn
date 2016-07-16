@@ -13,16 +13,13 @@ from tensorflow.python.ops             import variable_scope        as vs
 from tensorflow.python.ops.constant_op import constant  as const
 
 
-
-class actConnGraph(object):
-    # Default graph for Active Connectonic uncovering
-    ''' 
-
+    '''
     _________________________________________________________________________
 
                                  MODELS DESCRIPTION
     _________________________________________________________________________
 
+  
   
     '__NGCmodel__' : RNN(Network&Globalcell) + Calcium dynamic
 
@@ -41,16 +38,6 @@ class actConnGraph(object):
                       and is also influenced by the previous 
                       inputstep with calcium decay.
 
-    _________________________________________________________________________
-
-                                      ARGUMENTS
-    _________________________________________________________________________
- 
-    
-
-    featDict: Dictionnary that contains the parameters used to 
-              build the graph. To see a list of the parameters,
-              see activeConnMain.py file. 
 
     _________________________________________________________________________
 
@@ -82,6 +69,7 @@ class actConnGraph(object):
     _________________________________________________________________________
 
 
+
     Masks are used to modulate the parameter space that can be
     explored by the model. They are applied after every variable
     update.
@@ -94,7 +82,31 @@ class actConnGraph(object):
     
      Mask operations will be executed in the same order
 
+
+     ________________________________________________________________________
+
     '''   
+
+
+class actConnGraph(object):
+    # Default graph for Active Connectonic uncovering
+
+    '''
+    ________________________________________________________________________
+
+                                     ARGUMENTS
+    ________________________________________________________________________
+ 
+    
+    featDict: Dictionnary that contains the parameters used to 
+              build the graph. To see a list of the parameters,
+              see activeConnMain.py file. 
+
+    ________________________________________________________________________
+
+    '''
+
+
     # ----------------------------------------- VARIABLES ----------------------------------------- #
 
     def __init__(self, featDict ):
@@ -509,7 +521,7 @@ class actConnGraph(object):
 
 def plotfit(paramFile, nbPoints = 4000, ckpt='/tmp/backup.ckpt'):
     ''' 
-    
+    1
     Will plot the real values and the fit of the model on top of it
     in order to evaluate the fit of the model.
 
