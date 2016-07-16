@@ -31,47 +31,6 @@ def activeConn(paramDict, data, run = True):
 	run      : Will run the model or not
 	_______________________________________________________________
 
-							PARAMETERS
-	_______________________________________________________________
-
-	Parameters that could make the models to fail are usually not 
-	included in the defaults parameters in order to avoid subtle bugs.
-
-	These parameters have a '*' next to their name in the list bellow.
-
-	PATH
-	----------
-	dataset  : Dataset name to load
-	_mPath   : Main path containing data & ckpt folder and config files
-	saveName : Name of checkpoint to be saved
-		   	  A checkpoint will also be save as '/tmp/backup.ckpt'
-
-	ALGORITHM
-	-----------
-	learnRate : Training learning rate
-	nbIters   : Number of training iterations
-	batchSize : Number of example per batch
-	dispStep  : Number of iterations before display of cost information
-
-	NETWORK
-	------------
-	model      : Model name to use
-				   __multirnn_model__ : 
-	actfct     : Model's activation function for NN 
-	nInput     : Number of inputs  units
-	seqLen     : Timeserie length for RNN 
-	nhidGlob * : Number of hidden units in global  dynamic cell
-	nhidNetw   : Number of hidden units in network dynamic cell
-	nOut       : Number of output units
-
-	DATA
-	---------
-	method  : Data preparation method
-			  0: standardization
-			  1: normalization
-			  2: normalization and shift to positive 
-			  3: standardization + normalization
-	t2Dist : Prediction time distance
 
 	'''
 
