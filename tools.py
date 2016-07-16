@@ -9,9 +9,25 @@ import tensorflow as tf
 
 pi = math.pi
 
-def batchCreation(inputs,outputs, perm=False, nbIters=100, batchSize=50, seqLen=50):
-    # Will create a batch of size (nbIters,batchSize,n_steps,nInput) with random
-    # sequences drawn everytime is it called (i.e. potential redraw). 
+def batchCreation(inputs,outputs, perm= False, nbIters=100, batchSize=50, seqLen=50):
+    ''' 
+    ________________________________________________________________________
+
+                                   ARGUMENTS
+    ________________________________________________________________________
+
+
+    inputs    : Input data sequence (time series fed into model)
+    outputs   : Output data (label or prediction)
+    perm      : Wheter batches will be selected via permutation or random
+    nbIters   : Number of batches per batchcreation
+    batchSize : number of time series in a batch
+    seqLen    : Timeserie length (number of frames)
+
+    ________________________________________________________________________
+
+
+    '''
     
     nSeq   = inputs.shape[1] - seqLen  # Number of sequences
     nInput = inputs.shape[2]           # Number of inputs
@@ -58,21 +74,39 @@ def batchCreation(inputs,outputs, perm=False, nbIters=100, batchSize=50, seqLen=
         Y1 = inputs[:,randidx,:]
         Y2 =  outputs[randidx,:]
 
-    return Y1.reshape([nbIters,batchSize,seqLen,nInput]), Y2.reshape([nbIters,batchSize,nInput])
+    return( Y1.reshape([nbIters,batchSize,seqLen,nInput]), 
+            Y2.reshape([nbIters,batchSize,nInput]) )
 
 
 def calcResponse(data, stimFrames, stimOrder, nf = 12, nfb = 1):
-    ''' Will output :
-        ~ Invididual cells repsonse when directly stimulated
-        ~ Average cells response when other cells are stimulated
-        ~ Individual cells response when any stimulation
+    ''' 
+    Calcium response when multiple cells are stimulated at the same
+    time. 
+    ________________________________________________________________________
 
-    Arguments:
-        data       : dataset containing optogenetic stimulation
-        stimFrames : list of frames where stimulation happens
-        stimOrder  : order in which cells were stimulated
-        nf         : number of frames to keep after stimulation  
-        nfb        : number of frames before stimulation
+                                   ARGUMENTS
+    ________________________________________________________________________
+
+
+    data       : Dataset containing optogenetic stimulation
+    stimFrames : List of frames where stimulation happens
+    stimOrder  : Order in which cells were stimulated
+    nf         : Number of frames to keep after stimulation  
+    nfb        : Number of frames before stimulation
+
+    ________________________________________________________________________
+
+                                    RETURNS
+    ________________________________________________________________________
+
+
+    trig: Invididual cells repsonse when directly stimulated
+    ctrl: Average cells response when other cells are stimulated
+    allS: Individual cells response when stimulation of any other cell
+
+    ________________________________________________________________________
+ 
+ 
 
     '''
     nfb = nfb - 1 #correct for python indexing
@@ -157,18 +191,39 @@ def calcResponse(data, stimFrames, stimOrder, nf = 12, nfb = 1):
 
     return trig, diff, allS, ctrl
 
-def calcResponseMulti(data, stimFrames, stimOrder, nf = 12, nfb = 1):
-    ''' Will output :
-        ~~ Invididual cells repsonse when directly stimulated
-        ~~ Average cells response when other cells are stimulated
-        ~~ Individual cells response when any stimulation
 
-    Arguments:
-        data       : dataset containing optogenetic stimulation
-        stimFrames : list of frames where stimulation happens
-        stimOrder  : order in which cells were stimulated
-        nf         : number of frames to keep after stimulation  
-        nfb        : number of frames before stimulation
+def calcResponseMulti(data, stimFrames, stimOrder, nf = 12, nfb = 1):
+    ''' Calcium response when multiple cells are stimulated at the same
+        time. 
+
+    ________________________________________________________________________
+
+                                   ARGUMENTS
+    ________________________________________________________________________
+
+
+
+    data       : Dataset containing optogenetic stimulation
+    stimFrames : List of frames where stimulation happens
+    stimOrder  : Order in which cells were stimulated
+    nf         : Number of frames to keep after stimulation  
+    nfb        : Number of frames before stimulation
+
+
+    ________________________________________________________________________
+
+                                   RETURNS
+    ________________________________________________________________________
+
+
+
+    trig: Invididual cells repsonse when directly stimulated
+    ctrl: Average cells response when other cells are stimulated
+    allS: Individual cells response when stimulation of any other cell
+
+
+    ________________________________________________________________________
+ 
 
     '''
     nfb = nfb - 1 #correct for python indexing
@@ -262,9 +317,27 @@ def calcResponseMulti(data, stimFrames, stimOrder, nf = 12, nfb = 1):
     return trig, allS, ctrl #diff
 
 def loadHDF5Dataset(path,field,dataset):
-    # Will return the values associated with the field of 
-    # the specified dataset. See the README.md file of the 
-    # dataset for a description of each dataset and field.
+    ''' Will return the values associated with the field of 
+        the specified dataset. See the README.md file of the 
+        dataset for a description of each dataset and field.
+
+        This function is specific to optogenetic data in V1
+        from Haüsser lab.
+
+    ________________________________________________________________________
+
+                                   ARGUMENTS
+    ________________________________________________________________________
+
+
+    path    : Path to the dataset
+    field   : Name of the field in the dataset to load
+    dataset : Number of dataset to load
+
+    ________________________________________________________________________
+ 
+
+    '''
     
     #To adjust for python indexing
     dataset = dataset - 1
@@ -290,13 +363,23 @@ def loadHDF5Dataset(path,field,dataset):
 def meanSTA(data, frames, nstim=8, nf= 241):
     ''' Calculate the calcium triggered average
         
-        nstim : number of stimuli presented
-        nf    : number of frames to save after stimuli
+
+    Assumes repetitive cycles through each stimuli
+    in an ordered fashion.
+    
+    Returns mean STA for each stimuli & neuron
+    ________________________________________________________________________
+
+                                   ARGUMENTS
+    ________________________________________________________________________
+
+
+    nstim : Number of stimuli presented
+    nf    : Number of frames to save after stimuli
         
-        Assumes repetitive cycles through each stimuli
-        in an ordered fashion.
-        
-        Returns mean STA for each stimuli & neuron
+    ________________________________________________________________________
+ 
+
     '''
     
     N     = data.shape[0]       # Number of neurons
@@ -320,15 +403,27 @@ def meanSTA(data, frames, nstim=8, nf= 241):
     return sumSTA/occur  
 
 
-def prepare_data(data, seqLen, method = 1, t2Dist = 1):     # look back T steps max
-    ''' Putting the data in the right format
+def prepare_data(data, seqLen, method = 1, t2Dist = 1): 
+    ''' Putting the data in the right format for training
+
+    ________________________________________________________________________
+
+                                   ARGUMENTS
+    ________________________________________________________________________
+ 
 
         seqLen : number of time points 
-         method : 0 = standardization
-                  1 = normalization
-                  2 = normalization with value shifted to positive
-                  3 = standardization + normalization
-        t2Dist : Number of timesteps you are tring to predict '''
+        method : 0 = standardization
+                 1 = normalization
+                 2 = normalization with value shifted to positive
+                 3 = standardization + normalization
+        t2Dist : Number of timesteps you are tring to predict 
+
+    ________________________________________________________________________
+
+ 
+
+    '''
 
     #Correcting for python index
     t2Dist = t2Dist - 1 
@@ -365,7 +460,7 @@ def prepare_data(data, seqLen, method = 1, t2Dist = 1):     # look back T steps 
     # Label vectors (T2)
     alOutput  = data[:,seqLen+t2Dist:-1]                 # Take the seqLen+1 vector as output
 
-    # Input vectors (T1)
+    #Input vectors (T1)
     alInput   = np.zeros((seqLen, data_size, numSeq))
     for i in range(numSeq):
         alInput[:,:,i] = data[:, i:(i+seqLen)].T  # seqLen * 10x1 vectors before T+1 (exclusive) 
@@ -399,14 +494,25 @@ def prepare_data(data, seqLen, method = 1, t2Dist = 1):     # look back T steps 
 
 
 def remBaseline(data, percentile = 10, binsize = 1000):
-    # Will iterate through a time serie, bin it, calculate the 
-    # specified percentile and substract this value from the bin.
-    # this should remove the slower trend not task specific. 
+    ''' 
+    Will iterate through a time serie, bin it, calculate the 
+    specified percentile and substract this value from the bin.
+    This should remove the slower trend not task specific. 
 
-    # Data       : Has to be size [N x T], where N is number of units 
-    #                  and T is time of serie
-    # percentile : Percentile value that will be used to substract the bin
-    # binsize    : Bins size that will be used to correct for drifts
+    ________________________________________________________________________
+
+                                   ARGUMENTS
+    ________________________________________________________________________
+ 
+
+    Data       : Has to be size [N x T], where N is number of units 
+                        and T is time of serie
+    percentile : Percentile value that will be used to substract the bin
+    binsize    : Bins size that will be used to correct for drifts
+
+    ________________________________________________________________________
+ 
+    '''
 
     #Variables
     N    = data.shape[0] #Number of neurons
@@ -438,8 +544,11 @@ def remBaseline(data, percentile = 10, binsize = 1000):
 
 
 def shapeData(_T1, seqLen, nInput):
-    #Puts batch data into the following format : seqLen x [batchSize,n_input]
-    #Taking the inputs
+    '''
+    Puts batch data into the following format : seqLen x [batchSize,n_input]
+    Taking the inputs
+    '''
+
     _Z1 = tf.identity(_T1)
 
     # Reshape to prepare input to hidden activation
@@ -451,10 +560,13 @@ def shapeData(_T1, seqLen, nInput):
 
 
 def stim_nstim_split(data,frameSet):
-    # Will split the stimulation part ([-1 frame,stimulation,+1 frame])
-    # from the non-stimulation part (frames non present in the stimulation section)
-    # and concatenate the segments.
-    
+    '''
+        Will split the stimulation part ([-1 frame,stimulation,+1 frame])
+        from the non-stimulation part (frames non present in the stimulation section)
+        and concatenate the segments.
+
+    '''
+
     N = data.shape[0]
     
     data_nstim = np.zeros([N,0]) # All the data after and between stimulations ( ]-1,stim,+1[ )
@@ -477,8 +589,23 @@ def stim_nstim_split(data,frameSet):
 
 
 def weightInit(dim, Wname, train = True):
-    # Will create a tf weight matrix with weight values proportional
-    # to number of neurons.
+    ''' 
+    Will create a tf weight matrix with weight values proportional
+    to number of neurons. 
+
+    ________________________________________________________________________
+
+                                   ARGUMENTS
+    ________________________________________________________________________
+ 
+    
+    dim   : Dimension of the variable to create (can be vector or vector)
+    Wname : Name of the variable
+    train : If variable is trainable or not.  
+
+    ________________________________________________________________________
+
+    '''
 
     #Putting in list format
     if type(dim) is int:
