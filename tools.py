@@ -428,7 +428,7 @@ def remBaseline(data, percentile = 10, binsize = 1000):
         baseline[:,t] = np.percentile(dataBL[:,points], percentile, axis = 1)
 
     #Filling boundaries baseline
-    baseline[:,:half]     = np.tile(baseline[:,  half],[half,1]).T 
+    baseline[:,:half]   = np.tile(baseline[:,  half  ],[half,1]).T 
     baseline[:,T-half:] = np.tile(baseline[:,T-half-1],[half,1]).T
 
     #Removing baseline
@@ -486,7 +486,7 @@ def weightInit(dim, Wname, train = True):
 
     numUnit = sum(dim)  #Total number of units projecting to 
 
-    W = tf.Variable( tf.random_normal( dim, stddev = 1/numUnit ), 
+    W = tf.Variable( tf.random_normal( dim, stddev = 1/np.sqrt(numUnit) ), 
                      trainable= train, name= Wname )
     return W
 
