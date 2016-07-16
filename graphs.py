@@ -17,89 +17,74 @@ from tensorflow.python.ops.constant_op import constant  as const
 class actConnGraph(object):
     # Default graph for Active Connectonic uncovering
     ''' 
-    MODEL DESCRIPTION:
-    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 
-    The model is constituted of three main part :
+    _________________________________________________________________________
 
-    1. The global cell 
-    2. The network cell
-    3. integrating previous cell with calcium filter of input
+                                 MODELS DESCRIPTION
+    _________________________________________________________________________
 
-    The first cell is a low rank RNN with the goal of capturing 
-    global dynamics (fast and slow). 
+  
+    '__NGCmodel__' : RNN(Network&Globalcell) + Calcium dynamic
 
-    The second cell tries to capture the real dynamic between 
-    the units (population or neurons) observed in the data.
+                    1. RNN( The global & network cell )
+                        
+                      Global cell is a low rank RNN with the goal 
+                      of capturing global dynamics (fast and slow). 
 
-    The third component integrates previous cell and is also 
-    influenced by the previous inputstep with calcium decay.
+                      Network cell tries to capture the real dynamic 
+                      and connectivity between the units observed in 
+                      the data.
+                    
+                    2. F( Calcium dynamic + 1. ) 
+                        
+                      Calcium dynamic integrates previous cell 
+                      and is also influenced by the previous 
+                      inputstep with calcium decay.
 
-    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+    _________________________________________________________________________
 
-    ARGUMENTS:
-    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  
+                                      ARGUMENTS
+    _________________________________________________________________________
+ 
     
-    nhid_glod : Number of Global cell units
-    nInput    : Number of input units
-    nhidNetw  : Number of Network cell units
-    nOut      : Number of output units
-    seqLen    : Length of sequences
-    weights   : Dictionnary containing the weights of each cells
-    masks     : Mask applied to the corresponding weights after every batch
-    actfct    : Activation function used in RNN
-    batchSize : Number of examples in each batch
-    learnRate : Learning rate coefficient
-    model     : Which model to use ...
-                    '__NGCmodel__' : RNN( Network & Global cell) + calcium dynamic
 
-    ...
-    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+    featDict: Dictionnary that contains the parameters used to 
+              build the graph. To see a list of the parameters,
+              see activeConnMain.py file. 
+
+    _________________________________________________________________________
+
+                                      FUNCTIONS
+    _________________________________________________________________________
 
 
-    FUNCTIONS:
-    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
-    
-    __VNoise__  : Adding stochasticity in the tensorflow graph variables  
-                  at every update for a stotastic gradient descent. 
-    
+
     __masking__ : Adding masks in the tensorflow graph that will 
-                  be applied to the weights at every iteration.
+                  be applied to the designed weights after every
+                  variables update.
+    
+    __VNoise__  : Adding stochasticity in all the tensorflow graph 
+                  variables after every update for a stotastic 
+                  gradient descent. 
     
     launchGraph : Will lauch the training of the model.
 
-    plotfit     : Will plot the test set and the prediction of the model.
+    plotfit     : Will plot the test set and the prediction of 
+                  the model.
 
-    showVars    : Will plot the variables with imshow (matrices) and plot (vectors)
+    showVars    : Will plot the variables with imshow (matrices)
+                  and plot (vectors)
 
 
-                ...
+    _________________________________________________________________________
 
-    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+                                       MASKING
+    _________________________________________________________________________
 
-    MODELS
-    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
-    List of available models:
-    
 
-    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
-
-    MASKS
-    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
-
-    Masks are used to constrain the weight space that can be learned
-         which are multiplied with the weights after every optimization.
-    
-     netw_IH_HH : Direct connection (identity) for I-> H and all-to-all (except id) for H->H   
-     netw_HO    : Direct connection (identity) 
-
-     Define weights
-         Hidden -> Hidden (HH) structure is the second par of the W matrix, 
-         concatenanted with Input -> Hidden (IH). 
-         
-     netw_IH_HH : NetworkCell input  -> hidden (IH) & hidden -> hidden (HH) 
-     netw_H0 :    NetworkCell hidden -> output (HO)
-     glob_H0 :    NetworkCell hidden -> output (HO)
+    Masks are used to modulate the parameter space that can be
+    explored by the model. They are applied after every variable
+    update.
 
      The first character of a mask has a meaning :
     
@@ -109,22 +94,20 @@ class actConnGraph(object):
     
      Mask operations will be executed in the same order
 
-                ....
-
     '''   
-    # ------------------------------------------------- Variables ------------------------------------------------- #
+    # ----------------------------------------- VARIABLES ----------------------------------------- #
 
-    def __init__(self, feat_dict ):
+    def __init__(self, featDict ):
 
         #Default model parameters
         defaults = {  'learnRate': 0.0001, 'nbIters':10000, 'batchSize': 50, 
                       'dispStep'  :200, 'model': '__NGCmodel__',
                       'actfct':tf.tanh,'seqLen':10, 'method':1, 't2Dist':1   }      
 
-        #Updating default params with feat_dict
-        defaults.update(feat_dict)
+        #Updating default params with featDict
+        defaults.update(featDict)
 
-        #Assigining attributes from feat_dict
+        #Assigining attributes from featDict
         for key, val in defaults.items():
                 setattr(self, key, val)
 
@@ -137,19 +120,17 @@ class actConnGraph(object):
         #Specifying model
         model = getattr(self, self.model)
 
-        #Building the graph 
+        # ---------------------------------------- GRAPH ----------------------------------------- #
         graph = tf.Graph()
         with graph.as_default():    
 
             #Variable placeholders 
-            self._T1 = tf.placeholder("float", [None, self.seqLen, self.nInput]) # Input at time t
-            self._T2 = tf.placeholder("float", [None, self.nInput])              # Input at time t+1
-            #self.learnRate = tf.placeholder("float", [])                           # Learning rate for adaptive LR
+            self._T1 = tf.placeholder("float", [None, self.seqLen, self.nInput]) #Input at time t
+            self._T2 = tf.placeholder("float", [None, self.nInput])              #Input at time t+1
+            #self.learnRate = tf.placeholder("float", [])            #Learning rate for adaptive LR                         
 
             #Shape data
             _Z1 = shapeData(self._T1, self.seqLen, self.nInput)
-
-            # --------------------------------------------------- Model --------------------------------------------------- #
             
             #Prediction using models
             self._Z2 = model(_Z1)
@@ -164,10 +145,12 @@ class actConnGraph(object):
             
             #Cost for connectivity in the network cell (H->H)
             #self.sparsC  = tf.add_n([ tf.nn.l2_loss( self.vnames['netw_IH_HH/BasicRNNCell/Linear/Matrix:0'][self.nhidNetw:,:] ) ])
-            self.sparsC  = tf.add_n([tf.reduce_sum(tf.abs(v)) for v in self.variables]) 
-            
+            #self.sparsC  = tf.add_n([tf.reduce_sum(tf.abs(v)) for v in self.variables]) 
+            self.sparsC  = tf.reduce_sum(np.float32([0,1]))
+
             #Sum of square distance
             self.ngml = tf.reduce_sum(tf.pow(self._Z2 - self._T2, 2))/10
+            
             #Prior
             self.ngprior = 0
 
@@ -177,31 +160,56 @@ class actConnGraph(object):
             #To test the precision of the network
             self.precision = tf.reduce_mean(tf.pow(self._Z2 - self._T2, 2))
  
-            # Backpropagation
+            #Backpropagation
             self.optimizer = tf.train.AdamOptimizer(learning_rate = self.learnRate).minimize(self.cost) 
 
-            # Adding gaussian noise to variables updates
+            #Adding gaussian noise to variables updates
             #self.V_add_noise = self.__VNoise__(self.variables) # List of var.assign_add(noise) for all variables
 
-            # Applying masking for restained connectivity
+            #Applying masking for restained connectivity
             self.masking = self.__masking__(self.variables)
 
+            #Saving graph
             self.saver = tf.train.Saver()
-
-            self.allops = [op.outputs for op in tf.get_default_graph().get_operations()]
 
         self.graph = graph
 
 
     def __NGCmodel__(self,_Z1):
-        # RNN(Network+Global cells) & Calcium dynamic
+        ''' RNN(Network+Global cells) & Calcium dynamic
+
+            Define weights & masks
+
+                ng_H0_W  : Network&Global hidden -> output (HO)
+
+                alpha    : Decay of data input at t-1
+
+                ng_IH_HH : Network&Global cell Input  -> Hidden (IH) & Hidden -> Hidden (HH) 
+                             
+                             1ng_IH_HH: 
+                                Mask will be applied so that netw cell receives input from 
+                                glob and data, but glob cell only receive data. Furthermore,
+                                network cell self-connectivity is prevented by putting the
+                                identity to 0. 
+
+                             2ng_IH_HH:
+                                Noise is added to this weight matrix for bayesian learning.
+                
+        '''
 
         #Initialization
-        ngO = tf.zeros((self.batchSize, self.nhid),dtype='float32',name = 'ng0') # Netw+Glob state initialization
-        Z2  = 0                                     # Model prediction
+        ngO = tf.zeros((self.batchSize, self.nhid),dtype='float32') # Netw+Glob state initialization
+        Z2  = tf.zeros(1) # Model prediction
+
+        #Defining weights
+        self.weights = { 
+                         'ng_H0_W' : weightInit([self.nhid,self.nOut], 'ng_HO_W' ) 
+                         'alpha'   : tf.get_variable("alpha",[self.nInput,1]) 
+                        }
 
         #Defining masks
-        self.masks = {'1ng_IH_HH': 
+        self.masks = {
+                       '1ng_IH_HH': 
                           np.vstack([ 
                                      np.ones([self.nInput, self.nhid],  dtype='float32'),
                                      np.hstack([ np.ones( [self.nhidNetw]*2,       dtype='float32')   
@@ -210,24 +218,19 @@ class actConnGraph(object):
                                      np.ones([self.nhidGlob,self.nhid], dtype='float32')
                                     ]),
 
-                      '2ng_IH_HH': tf.random_normal([self.nInput + self.nhid, self.nhid],
+                       '2ng_IH_HH': tf.random_normal([self.nInput + self.nhid, self.nhid],
                                                     0.01) * self.learnRate
                      } 
 
-        #Defining weights
-        self.weights = { 'ng_H0_W' : weightInit([self.nhid,self.nOut], 'ng_HO_W' ) }
-
         #Defining biases
-        self.biases  = { 'ng_H0_B' : weightInit(self.nOut, 'ng_H0_B') }  
+        self.biases = { 'ng_H0_B' : weightInit(self.nOut, 'ng_H0_B') }  
 
         #Defining other variables
-        self.alpha   = tf.get_variable("alpha",[self.nInput,1])
+        self.
 
         #Network + Global dynamic cell (concatenated)
         ngCell = rnn_cell.BasicRNNCell(self.nhid, activation= self.actfct)
         ngCell = rnn_cell.MultiRNNCell([ngCell])
-        
-        
 
         #RNN looping through sequence time points
         with tf.variable_scope("ng_IH_HH") as scope:
@@ -244,10 +247,10 @@ class actConnGraph(object):
                 ngO, ngS = ngCell(ZD, ngO)
 
                 #NG to output cells
-                ng_Z2 = tf.matmul(ngO, self.weights['ng_H0_W'] + self.biases['ng_H0_B'])
+                ng_Z2 = self.actfct(tf.matmul(ngO, self.weights['ng_H0_W'] + self.biases['ng_H0_B']))
 
                 #Prediction with calcium dynamic
-                Z2 = self.actfct(tf.matmul(_Z1[i], self.alpha) + ng_Z2)
+                Z2 = tf.sigmoid(tf.matmul(_Z1[i], self.alpha) + ng_Z2)
 
         return Z2
 
@@ -264,16 +267,16 @@ class actConnGraph(object):
                          'glob_HO_W'  : weightInit([self.nhidGlob, self.nOut], 'glob_HO_W'  )
                         } 
 
-        #Defining the biases
-        self.biases =  {  
-                         'netw_dir_B' : weightInit(self.nOut, 'netw_HO_B'),
-                         'glob_HO_B'  : weightInit(self.nOut, 'glob_HO_B') 
-                        } 
-
         #Defining masks
         self.masks   = {
                          '1netw_dir_M' : np.ones([self.nhidNetw]*2,  dtype= 'float32') - 
                                          np.identity(self.nhidNetw,  dtype= 'float32')
+                        } 
+
+        #Defining the biases
+        self.biases =  {  
+                         'netw_dir_B' : weightInit(self.nOut, 'netw_HO_B'),
+                         'glob_HO_B'  : weightInit(self.nOut, 'glob_HO_B') 
                         } 
 
         #Global dynamic cell
@@ -305,7 +308,7 @@ class actConnGraph(object):
         V = []
         #Adding random noise
         for v in variables:
-            V_add = v.assign_add(learningR * tf.random_normal(v.get_shape().as_list(), std))
+            V_add = v.assign_add(learningR*tf.random_normal(v.get_shape().as_list(), std))
             V.append(V_add)
 
         return V
@@ -388,8 +391,8 @@ class actConnGraph(object):
         backupPath = '/tmp/backup.ckpt'
 
         #Unpacking data
-        T1  = inputData['T1']
-        T2  = inputData['T2'] 
+        T1  = inputData['Fit1']
+        T2  = inputData['Fit2'] 
         Te1 = inputData['Te1']
         Te2 = inputData['Te2']
 
@@ -424,9 +427,6 @@ class actConnGraph(object):
                 #Running backprop
                 sess.run(self.optimizer, feed_dict)
                 
-                #Adding noise to weights
-                #sess.run(self.V_add_noise)
-
                 #Applying masks
                 sess.run(self.masking)
 
@@ -508,14 +508,26 @@ class actConnGraph(object):
 
 
 def plotfit(paramFile, nbPoints = 4000, ckpt='/tmp/backup.ckpt'):
-    ''' Will plot the real values and the fit of the model on top of it
-         in order to evaluate the fit of the model.
+    ''' 
+    
+    Will plot the real values and the fit of the model on top of it
+    in order to evaluate the fit of the model.
+
+    _________________________________________________________________________
+
+                                       ARGUMENTS
+    _________________________________________________________________________
         
+
          paramFile : Parameter file to run (in activeConnMain)
          nbPoints  : number of time points to pick from the fit dataset 
-         ckpt      : ckpt can either be a full path to the ckpt, or just the ckpt name.
-                      If only the name is provided, plotfit will look into activeConn/checkpoints/
-                      If agument not provided, plotfit will use the backup ckpt in /tmp.
+         ckpt      : ckpt can either be a full ckpt path, or only ckpt name.
+                       ~> If only the name is provided, plotfit will look into 
+                             activeConn/checkpoints/
+                       ~> If agument not provided, plotfit will use the backup 
+                             ckpt in /tmp.
+
+    _________________________________________________________________________
 
     '''
 
