@@ -7,19 +7,82 @@
 '''
 # Imports --------------------------------------------------------------------------
 
+
+
 from activeConn.activeConnSet import activeConn
 from scipy.io                 import loadmat
 from activeConn.tools 		  import *
 
+import h5py 
 import tensorflow as tf
 
+'''
+	_______________________________________________________________
+
+								PARAMETERS
+	_______________________________________________________________
+
+	Parameters that could make the models fail are not included in 
+	the defaults parameters in order to avoid subtle bugs.
+
+	These parameters have a '*' next to them in the list bellow.
+
+	PATH
+	----------
+	dataset  : Dataset name to load
+	_mPath   : Path containing data, ckpt folder and main files
+	saveName : Name of checkpoint to be saved
+				 + Will be saved in '_mPath/checkpoints/saveName' 	
+		   	  	 + A checkpoint will be saved '/tmp/backup.ckpt'
+	ALGORITHM
+	-----------
+	learnRate : Training learning rate
+	nbIters   : Number of training iterations
+	batchSize : Number of example per batch
+	dispStep  : Number of iterations before display training info
+
+	NETWORK
+	------------
+	model      : Model name to use
+				  '__NGCmodel__' : RNN( Network & Global cell) 
+				  				   + calcium dynamic 
+
+	actfct     : Model's activation function for NN 
+	nInput     : Number of inputs  units
+	seqLen     : Timeserie length for RNN 
+	nhidGlob * : Number of hidden units in global  dynamic cell
+	nhidNetw   : Number of hidden units in network dynamic cell
+	nOut       : Number of output units
+
+	DATA
+	---------
+	method  : Data preparation method
+			  0: standardization
+			  1: normalization
+			  2: normalization and shift to positive 
+			  3: standardization + normalization
+	t2Dist : Prediction time distance
+
+	_______________________________________________________________
+
+
+'''
 
 def simul(argDict = None, run = True):
-	''' parameter file for simulation.
-		
-		run     : If running the simulation or not
-		argDict : Overwriting certain paramers. Has to be of type dict
-		 '''
+	''' 
+	Parameter file for simulation.
+	
+	_______________________________________________________________
+
+							ARGUMENTS
+	_______________________________________________________________
+
+	argDict : Overwriting certain paramers. Has to be of type dict
+	run     : If running the simulation or not
+
+	_______________________________________________________________
+
+	'''
 
 	# General Parameters ---------------------------------------------------------------
 
@@ -30,23 +93,23 @@ def simul(argDict = None, run = True):
 	saveName = 'sim.ckpt'
 
 	# algorithm parameters
-	learnRate = 0.0001  # Learning rate (steps)
-	nbIters   = 10000   # Number of training iterations
-	batchSize = 20      # Number of example per batch
-	dispStep  = 100     # Number of iterations before display
+	learnRate = 0.0001
+	nbIters   = 10000   
+	batchSize = 20      
+	dispStep  = 100     
 
 	#Network Parameters
 	model    = '__NGCmodel__'
-	actfct   = tf.tanh  # Model's activation function
-	nInput   = 600      # Number of inputs  
-	seqLen   = 5        # Temporal sequence length 
-	nhidGlob = 20       # Number of hidden units in global  dynamic cell
-	nhidNetw = 600      # Number of hidden units in network dynamic cell 
-	nOut     = 600      # Number of output units
+	actfct   = tf.tanh 
+	nInput   = 600      
+	seqLen   = 10        
+	nhidGlob = 20       
+	nhidNetw = 600      
+	nOut     = 600      
 
 	# Data parameters
-	method = 1  # Data preparation method (0: stand, 1: norm, 2: norm+shift, 3: norm+std)
-	t2Dist = 1  # Prediction time distance
+	method = 1  
+	t2Dist = 1  
 
 	#Graph build and execution --------------------------------------------------------
 
@@ -86,31 +149,30 @@ def optoV1(argDict = None, run = True):
 	# General Parameters ---------------------------------------------------------------
 
 	#dataset = 'kmeans0.npy'   #Dataset name
-	dataset  = 'AOS_20150612_L161_Noise_fixed.mat'
+	dataset  = 'optogenExp.h5'
 	_mPath   = '/groups/turaga/home/castonguayp/research/activeConn/' # Main path
 	#_mPath   = '/home/phabc/Main/research/janelia/turaga/Shotgun/'
 	saveName = 'opto.ckpt'
 
 	# algorithm parameters
-	learnRate = 0.0001 # Learning rate (steps)
-	nbIters   = 10000   # Number of training iterations
-	batchSize = 20      # Number of example per batch
-	dispStep  = 100     # Number of iterations before display
+	learnRate = 0.0001 
+	nbIters   = 10000   
+	batchSize = 20      
+	dispStep  = 100     
 
 	#Network Parameters
-	model    = '__NGCmodel__' # Model to use
-	actfct   = tf.nn.relu     # Model's activation function
-	nInput   = 348            # Number of inputs  
-	seqLen   = 10        	  # Temporal sequence length 
-	nhidGlob = 20             # Number of hidden units in global  dynamic cell
-	nhidNetw = 348            # Number of hidden units in network dynamic cell 
-	nOut     = 348            # Number of output units
+	model    = '__NGCmodel__' 
+	actfct   = tf.nn.relu     
+	nInput   = 348             
+	seqLen   = 10        	  
+	nhidGlob = 20             
+	nhidNetw = 348             
+	nOut     = 348            
 
 	# Data parameters
-	method 	   = 2    # Data preparation method (0: stand, 1: norm, 2: norm+shift, 3: norm+std)
-	t2Dist 	   = 1    # Prediction time distance
-	percentile = 10   # To remove baseline of calcium data
-	binsize    = 2000 # Size of bins to remove baseline
+	method 	= 2   
+	t2Dist 	= 1   
+	dsNo    = 2  #Dataset number 
 
 	#Graph build and execution --------------------------------------------------------
 
@@ -131,14 +193,11 @@ def optoV1(argDict = None, run = True):
 	# Loading data 
 	print('Loading Data      ...')
 	field = 'soma_thresh_traces' # Field of interest in dataset
-	dsNo  = 2                    # Dataset 
-	
+
 	#Loading data
 	dPath = _mPath + 'data/' + dataset  # Dataset path
-	data  = loadHDF5Dataset(dPath,field,dsNo).value
-
-	#Formatting data
-	dataDict = prepare_data(data, seq_len, method = method, t2_dist = t2_dist)
+	data  = h5py.File(dPath)['dataset'+str(dsNo)][:]
+	
 
 	#Running activeConn ~ Should be called seperatly 
 	graph, dataDict = activeConn(paramDict, data, run= run)
