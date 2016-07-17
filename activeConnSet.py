@@ -38,10 +38,12 @@ def activeConn(paramDict, data, run = True):
 	nInput = data.shape[0] # Number of units in data
 
 	#Default model parameters
-	pDict = {  'dataset':'FR_RNN.mat', '_mPath': expanduser("~") + '/.activeConn/',
+	pDict = {
+			   'dataset':'FR_RNN.mat', '_mPath': expanduser("~") + '/.activeConn/',
 	      	   'saveName': 'ckpt.ckpt', 'learnRate': 0.0001, 'nbIters':10000,
 	           'batchSize': 50, 'dispStep':200, 'model': '__NGCmodel__',
-	           'actfct':tf.tanh,'seqLen':10, 'method':1, 't2Dist':1               }       
+	           'actfct':tf.tanh,'seqLen':10, 'method':1, 't2Dist':1 , 'sampRate':0             
+	         }       
 
 	#Updatating pDict with input dictionnary
 	pDict.update(paramDict)
@@ -77,10 +79,7 @@ def activeConn(paramDict, data, run = True):
 	#Launch Graph
 	if run:
 		print('Launching Session ...')
-		graph.launchGraph( dataDict,
-		  				   nbIters  = pDict['nbIters'], 
-		  				   dispStep = pDict['dispStep'], 
-		                   savepath = savepath )
+		graph.launchGraph( dataDict, savepath = savepath )
 
 	return graph, dataDict
 
