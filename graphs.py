@@ -48,11 +48,11 @@ from tensorflow.python.ops.constant_op import constant  as const
 
 
 
-    __masking__ : Adding masks in the tensorflow graph that will 
+    _masking : Adding masks in the tensorflow graph that will 
                   be applied to the designed weights after every
                   variables update.
     
-    __VNoise__  : Adding stochasticity in all the tensorflow graph 
+    _VNoise  : Adding stochasticity in all the tensorflow graph 
                   variables after every update for a stotastic 
                   gradient descent. 
     
@@ -138,12 +138,19 @@ class actConnGraph(object):
         with graph.as_default():    
 
             #Variable placeholders 
-            self._T1 = tf.placeholder("float", [None, self.seqLen, self.nInput]) #Input at time t
-            self._T2 = tf.placeholder("float", [None, self.nInput])              #Input at time t+1
-            #self.learnRate = tf.placeholder("float", [])            #Learning rate for adaptive LR                         
+            self._T1    = tf.placeholder("float", [None, self.seqLen, self.nInput]) 
+            self._T2    = tf.placeholder("float", [None, self.nInput])              
+            self._batch = tf.placeholder("int32", [] )                                               
 
             #Shape data
             _Z1 = shapeData(self._T1, self.seqLen, self.nInput)
+
+            #Learning rate decay 
+            self.LR = tf.train.exponential_decay(self.learnRate, #LR intial value
+                                            self._batch,         #Current batch
+                                            500,                #Decay step
+                                            0.96,                #Decay rate
+                                            staircase = False)
             
             #Prediction using models
             self._Z2 = model(_Z1)
@@ -154,41 +161,34 @@ class actConnGraph(object):
             #Variables assigned to each of the variable name 
             self.vnames = {v.name:v for v in self.variables} 
 
-            # Define loss and optimizer
-            
-            #Cost for connectivity in the network cell (H->H)
-            #self.sparsC  = tf.add_n([ tf.nn.l2_loss( self.vnames['ng_IH_HH/MultiRNNCell/Cell0/BasicRNNCell/Linear/Matrix:0'][self.nhidNetw:,:] ) ])
-            self.sparsC = tf.add_n([ tf.reduce_sum( tf.abs( self.vnames['ng_IH_HH/MultiRNNCell/Cell0/BasicRNNCell/Linear/Matrix:0'][self.nhidNetw:,:] )) ])
-            #self.sparsC  = tf.add_n([tf.reduce_sum(tf.abs(v)) for v in self.variables]) 
-            #self.sparsC  = tf.add_n([tf.nn.l2_loss(v) for v in self.variables]) 
-            tf.nn.l2_loss
-            #self.sparsC  = tf.reduce_sum(np.float32([0,1]))
-
-            #Sum of square distance
-            self.ngml = tf.reduce_sum(tf.pow(self._Z2 - self._T2, 2))/5
-            
-            #Prior
-            self.ngprior = 0
-
-            #Total Cost
-            self.cost = (self.ngml + self.ngprior + self.sparsC/5) / (2*self.batchSize)
+            cost = self._cost()
 
             #To test the precision of the network
             self.precision = tf.reduce_mean(tf.pow(self._Z2 - self._T2, 2))
  
             #Backpropagation
-            self.optimizer = tf.train.AdamOptimizer(learning_rate = self.learnRate).minimize(self.cost) 
+            self.optimizer = tf.train.AdamOptimizer( learning_rate = 
+                                                     self.LR ).minimize(cost)
 
             #Adding gaussian noise to variables updates
-            #self.V_add_noise = self.__VNoise__(self.variables) # List of var.assign_add(noise) for all variables
+            #self.V_add_noise = self._VNoise(self.variables) # List of var.assign_add(noise) for all variables
 
             #Applying masking for restained connectivity
-            self.masking = self.__masking__()
+            self.masking = self._masking()
 
             #Saving graph
             self.saver = tf.train.Saver()
 
         self.graph = graph
+
+
+    '''
+        ________________________________________________________________________
+
+                                         MODELS
+        ________________________________________________________________________
+     
+    '''
 
 
     def __NGCmodel__(self,_Z1):
@@ -274,9 +274,11 @@ class actConnGraph(object):
                 #Gaussian noise
                 gNoise = tf.random_normal([self.batchSize,self.nOut], mean   = ng_Gmean, 
                                                                       stddev = ng_Gstd,  
-                                                                     dtype  = 'float32' )
+                                                                      dtype  = 'float32' )
+                gNoise = 0
+
                 #Prediction with calcium dynamic
-                Z2 = tf.sigmoid(tf.matmul(_Z1[i], self.weights['alpha_W']) + ng_Z2 + gNoise)
+                Z2 = tf.tanh(tf.matmul(_Z1[i], self.weights['alpha_W']) + ng_Z2 + gNoise)
 
         return Z2
 
@@ -322,25 +324,40 @@ class actConnGraph(object):
 
         return _Z2
 
-        vars = ['direct','whatever']
 
-    def __VNoise__(self, variables, learningR = .001, std = .001):
-        ''' Adding stochasticity in the tensorflow graph variables at every update
-           for a stotastic gradient descent.
+    '''
+    ________________________________________________________________________
 
-            variables: list of all variables
-            std      : standart deviation for normal distrubution'''
+                                VARIABLE FUNCTIONS
+    ________________________________________________________________________
 
-        V = []
-        #Adding random noise
-        for v in variables:
-            V_add = v.assign_add(learningR*tf.random_normal(v.get_shape().as_list(), std))
-            V.append(V_add)
+    '''
 
-        return V
+    def _cost(self):
+          ''' Will calculate the costs associated with the loss function '''
+          
+          #Cost for connectivity in the network cell (H->H)
+          #self._sparsC  = tf.add_n([ tf.nn.l2_loss( self.vnames['ng_IH_HH/MultiRNNCell/Cell0/BasicRNNCell/Linear/Matrix:0'][self.nhidNetw:,:] ) ])
+          #self._sparsC = tf.add_n([ tf.reduce_sum( tf.abs( self.vnames['ng_IH_HH/MultiRNNCell/Cell0/BasicRNNCell/Linear/Matrix:0'][self.nhidNetw:,:] )) ])
+          sparsC  = tf.add_n([tf.reduce_sum(tf.abs(v)) for v in self.variables]) 
+          #self._sparsC  = tf.add_n([tf.nn.l2_loss(v) for v in self.variables]) 
+          #self._sparsC  = tf.reduce_sum(np.float32([0,1]))
+
+          self._sparsC = (sparsC/self.LR)*(self.learnRate/50)
+
+          #Sum of square distance
+          self._ngml = tf.reduce_sum(tf.pow(self._Z2 - self._T2, 2))/5
+          
+          #Prior
+          ngprior = 0
+
+          #Total Cost
+          cost = (self._ngml + ngprior + self._sparsC ) / (2*self.batchSize)
+
+          return cost
 
 
-    def __masking__(self):
+    def _masking(self):
         ''' Will create the operations to update the weights
 
         The first character of a mask has a meaning :
@@ -408,6 +425,25 @@ class actConnGraph(object):
 
         return [Vars[i].assign(tempM[i]) for i in vidxAll]
 
+    def _VNoise(self, variables, learningR = .001, std = .001):
+        ''' Adding stochasticity in the tensorflow graph variables at every update
+           for a stotastic gradient descent.
+
+            variables: list of all variables
+            std      : standart deviation for normal distrubution'''
+
+        V = []
+        #Adding random noise
+        for v in variables:
+            V_add = v.assign_add( learningR*
+                                  tf.random_normal(
+                                  v.get_shape().as_list(), std) )
+            V.append(V_add)
+
+        return V
+
+
+
 
     def launchGraph(self, inputData, savepath = '_.ckpt'):
         # Launch the graph
@@ -454,14 +490,16 @@ class actConnGraph(object):
 
                 stepBat = 0 #for batches based on display step
 
-                feed_dict={ self._T1: T1_batch[stepBat,...], 
-                            self._T2: T2_batch[stepBat,...]  }
+                feed_dict={  self._T1    : T1_batch[stepBat,...], 
+                             self._T2    : T2_batch[stepBat,...],
+                             self._batch : stepTr  }
 
                 #Running backprop
                 sess.run(self.optimizer, feed_dict)
                 
                 #Applying masks
                 sess.run(self.masking)
+
 
 
                 if stepTr % self.dispStep == 0:
@@ -471,23 +509,25 @@ class actConnGraph(object):
                                                 seqLen    = self.seqLen)
 
                     #Dictionnary for plotting training progress
-                    feedDict_Tr = { self._T1    : T1_batch[stepBat,...], 
-                                    self._T2    : T2_batch[stepBat,...]  }
+                    feedDict_Tr = {  self._T1    : T1_batch[stepBat,...], 
+                                     self._T2    : T2_batch[stepBat,...],
+                                     self._batch : stepTr  }
 
                     #Training fit (mean L2 loss)
-                    trFit   = sess.run(self.ngml, feed_dict = feedDict_Tr)
+                    trFit   = sess.run(self._ngml, feed_dict = feedDict_Tr)
 
                     #Weight sparsity
-                    trSpars = sess.run(self.sparsC, feed_dict = feedDict_Tr)
+                    trSpars = sess.run(self._sparsC, feed_dict = feedDict_Tr)
 
                     #Testing fit with new data
                     teFit   = sess.run(self.precision, feed_dict={ self._T1    : testX[0,...], 
                                                                    self._T2    : testY[0,...]  }) 
 
                     #Printing progress 
-                    print("Iter: " + str(stepTr) + "/" + str(self.nbIters) +   "  ~  L2 Loss: "     + "{:.6f}".format(trFit) +
-               "  ~  Sparsity loss: " + "{:.6f}".format(trSpars) + "        |  Testing fit: " + "{:.6f}".format(teFit))
-
+                    print( "Iter: " + str(stepTr) + "/" + str(self.nbIters)  +  
+                           "   ~  L2 Loss: "      + "{:.6f}".format(trFit)   +
+                           "   ~  L1 W loss: "    + "{:.6f}".format(trSpars) + 
+                           "   |  Test fit: "     + "{:.6f}".format(teFit)    )
 
                 stepTr += 1
                 stepBat += 1
@@ -668,7 +708,7 @@ class actConnGraph(object):
         display.clear_output()
 
 
-def plotfit(paramFile, nbPoints = 4000, ckpt='/tmp/backup.ckpt'):
+def plotfit(paramFile, argDict= None, nbPoints = 4000, ckpt='/tmp/backup.ckpt'):
     ''' 
     1
     Will plot the real values and the fit of the model on top of it
@@ -679,7 +719,7 @@ def plotfit(paramFile, nbPoints = 4000, ckpt='/tmp/backup.ckpt'):
                                    ARGUMENTS
     _________________________________________________________________________
         
-
+         argDict   : Overwriting certain paramers. Has to be of type dict
          paramFile : Parameter file to run (in activeConnMain)
          nbPoints  : number of time points to pick from the fit dataset 
          ckpt      : ckpt can either be a full ckpt path, or only ckpt name.
@@ -694,10 +734,10 @@ def plotfit(paramFile, nbPoints = 4000, ckpt='/tmp/backup.ckpt'):
 
     #Recovering main file function
     main = getattr(ACM, paramFile)
+    argDict['batchSize'] = nbPoints #Adjusting batchsize for nb of points
 
     #Building graph
-    pDict = {'batchSize' : nbPoints}
-    graphFit, dataDict = main(pDict, run = False)
+    graphFit, dataDict = main(argDict, run = False)
 
     T1 = dataDict['Fit1'][:,:nbPoints,:] # Input
     T2 = dataDict['Fit2'][:nbPoints,:]   # Label
