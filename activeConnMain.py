@@ -29,30 +29,33 @@ import tensorflow as tf
 
 	PATH
 	----------
-	dataset  : Dataset name to load
 	_mPath   : Path containing data, ckpt folder and main files
+	dataset  : Dataset name to load
 	saveName : Name of checkpoint to be saved
-				 + Will be saved in '_mPath/checkpoints/saveName' 	
-		   	  	 + A checkpoint will be saved '/tmp/backup.ckpt'
+				 ~> Will be saved in '_mPath/checkpoints/saveName' 	
+		   	  	 ~> A checkpoint will be saved '/tmp/backup.ckpt'
 	ALGORITHM
 	-----------
-	learnRate : Training learning rate
-	nbIters   : Number of training iterations
 	batchSize : Number of example per batch
 	dispStep  : Number of iterations before display training info
+	learnRate : Training learning rate
+	nbIters   : Number of training iterations
+	sampRate  : Rate at which variables sampling is done
+	v2track   : List of name of variables to track (sample)
+				 ~> If set to 0, no sampling will be performed
 
 	NETWORK
 	------------
+	actfct     : Model's activation function for NN 
 	model      : Model name to use
 				  '__NGCmodel__' : RNN( Network & Global cell) 
-				  				   + calcium dynamic 
-
-	actfct     : Model's activation function for NN 
-	nInput     : Number of inputs  units
-	seqLen     : Timeserie length for RNN 
+				  				   + Calcium dynamic 
+	
 	nhidGlob * : Number of hidden units in global  dynamic cell
 	nhidNetw   : Number of hidden units in network dynamic cell
+	nInput     : Number of inputs  units
 	nOut       : Number of output units
+	seqLen     : Timeserie length for RNN 
 
 	DATA
 	---------
@@ -84,34 +87,37 @@ def simul(argDict = None, run = True):
 
 	'''
 
-	# General Parameters ---------------------------------------------------------------
+	#Parameters -----------------------------------------------------------------------
 
 	#dataset = 'kmeans0.npy'   #Dataset name
-	dataset  = 'FR_RNN.mat'
 	_mPath   = '/groups/turaga/home/castonguayp/research/activeConn/' # Main path
+	dataset  = 'FR_RNN.mat'
 	#_mPath   = '/home/phabc/Main/research/janelia/turaga/Shotgun/'
 	saveName = 'sim.ckpt'
 
 	# algorithm parameters
+	batchSize = 20      
+	dispStep  = 100
 	learnRate = 0.0001
 	nbIters   = 10000   
-	batchSize = 20      
-	dispStep  = 100     
+	sampRate  = 100
+	v2track   = ['ng_IH_HH/MultiRNNCell/Cell0/BasicRNNCell/Linear/Matrix',
+				 'ng_Gmean', 'ng_Gstd', 'alpha_W']
 
 	#Network Parameters
+	actfct   = tf.sigmoid 
 	model    = '__NGCmodel__'
-	actfct   = tf.tanh 
-	nInput   = 600      
-	seqLen   = 10        
 	nhidGlob = 20       
-	nhidNetw = 600      
-	nOut     = 600      
+	nhidNetw = 400      
+	nInput   = 400      
+	nOut     = 400      
+	seqLen   = 50        
 
 	# Data parameters
-	method = 1  
+	method = 2  
 	t2Dist = 1  
 
-	#Graph build and execution --------------------------------------------------------
+	#Graph ----------------------------------------------------------------------------
 
 	#Packing dictionnary
 	paramDict = {
@@ -120,7 +126,7 @@ def simul(argDict = None, run = True):
 			'dispStep' : dispStep,  'model'   : model,    'actfct'   : actfct,  
 			'method'   : method,    't2Dist'  : t2Dist,   'seqLen'   : seqLen,
 			'nhidGlob' : nhidGlob,  'nhidNetw': nhidNetw, 'nInput'   : nInput,
-			'nOut'     : nOut   
+			'nOut'     : nOut   ,   'sampRate': sampRate, 'v2track'  : v2track
 		     	 }
 
 	#Overwrite any parameters with extra arguments
@@ -149,33 +155,37 @@ def optoV1(argDict = None, run = True):
 	# General Parameters ---------------------------------------------------------------
 
 	#dataset = 'kmeans0.npy'   #Dataset name
-	dataset  = 'optogenExp.h5'
 	_mPath   = '/groups/turaga/home/castonguayp/research/activeConn/' # Main path
+	dataset  = 'optogenExp.h5'
 	#_mPath   = '/home/phabc/Main/research/janelia/turaga/Shotgun/'
 	saveName = 'opto.ckpt'
 
 	# algorithm parameters
-	learnRate = 0.0001 
-	nbIters   = 10000   
 	batchSize = 20      
 	dispStep  = 100     
+	learnRate = 0.00001 
+	nbIters   = 10000
+	sampRate  = 0
+	v2track   = ['ng_IH_HH/MultiRNNCell/Cell0/BasicRNNCell/Linear/Matrix',
+				 'ng_Gmean', 'ng_Gstd', 'alpha_W']   
 
 	#Network Parameters
-	model    = '__NGCmodel__' 
 	actfct   = tf.nn.relu     
+	model    = '__NGCmodel__' 
 	nInput   = 348             
-	seqLen   = 10        	  
 	nhidGlob = 20             
 	nhidNetw = 348             
 	nOut     = 348            
+	seqLen   = 10        	  
 
 	# Data parameters
-	method 	= 2   
+	method 	= 3   
 	t2Dist 	= 1   
 	dsNo    = 2  #Dataset number 
 
 	#Graph build and execution --------------------------------------------------------
 
+	#Packing dictionnary
 	#Packing dictionnary
 	paramDict = {
 			'dataset'  : dataset,   '_mPath'  : _mPath,   'saveName' : saveName, 
@@ -183,8 +193,8 @@ def optoV1(argDict = None, run = True):
 			'dispStep' : dispStep,  'model'   : model,    'actfct'   : actfct,  
 			'method'   : method,    't2Dist'  : t2Dist,   'seqLen'   : seqLen,
 			'nhidGlob' : nhidGlob,  'nhidNetw': nhidNetw, 'nInput'   : nInput,
-			'nOut'     : nOut   
-		     	 }
+			'nOut'     : nOut   ,   'sampRate': sampRate, 'v2track'  : v2track
+				}
 
 	#Overwrite any parameters with extra arguments
 	if argDict:
