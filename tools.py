@@ -413,10 +413,11 @@ def prepare_data(data, seqLen, method = 1, t2Dist = 1):
  
 
         seqLen : number of time points 
-        method : 0 = standardization
-                 1 = normalization
-                 2 = normalization with value shifted to positive
-                 3 = standardization + normalization
+        method : 0 = No transformation
+                 1 = standardization
+                 2 = normalization
+                 3 = normalization with value shifted to positive
+                 4 = standardization + normalization
         t2Dist : Number of timesteps you are tring to predict 
 
     ________________________________________________________________________
@@ -433,22 +434,22 @@ def prepare_data(data, seqLen, method = 1, t2Dist = 1):
     data_size = data.shape[0]                      # Number of units
     numSeq    = data_num - (seqLen + t2Dist + 1) # Number of sequences
     
-    if method == 0:
+    if method == 1:
         # Standardizing
         std  = np.tile( np.std(data, axis = 1),(data_num,1)).T #Matrix of mean for each row 
         mean = np.tile(np.mean(data, axis = 1),(data_num,1)).T #Matrix of std  for each row
         data = np.divide(data-mean,std)
 
-    elif method == 1:
+    elif method == 2:
         # Normalizing 
         data = data/np.absolute(data).max(axis=1).reshape(-1, 1)
 
-    elif method == 2:
+    elif method == 3:
         # Normalizing with only positive values by shifting values in positive
         data = data+abs(data.min())
         data = data/data.max(axis=1).reshape(-1, 1)
 
-    elif method == 3: 
+    elif method == 4: 
         # Standardizing
         std  = np.tile( np.std(data, axis = 1),(data_num,1)).T #Matrix of mean for each row 
         mean = np.tile(np.mean(data, axis = 1),(data_num,1)).T #Matrix of std  for each row
@@ -588,7 +589,7 @@ def stim_nstim_split(data,frameSet):
     return data_nstim, data_stim
 
 
-def weightInit(dim, Wname, train = True):
+def varInit(dim, Wname, train = True):
     ''' 
     Will create a tf weight matrix with weight values proportional
     to number of neurons. 
