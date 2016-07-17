@@ -422,7 +422,24 @@ def prepare_data(data, seqLen, method = 1, t2Dist = 1):
 
     ________________________________________________________________________
 
+                                     RETURNS
+    ________________________________________________________________________
  
+
+        dataDict: { T1   : Training sequences,     T2  : Traning label1
+                    Te1  : Testing  sequences,     Te2 : Testing label1
+                    Fit1 : All training sequences ordered wtr T
+                    Fit2 : Labels of Fit1 }
+                
+                Format:
+                        T1, Te1, Fit1 : seqLen x nSequences x nInputs
+                        T2, Te2, Fit2 : nSquences x nInputs
+
+
+    ________________________________________________________________________
+
+
+
 
     '''
 
