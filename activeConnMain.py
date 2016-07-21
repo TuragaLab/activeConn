@@ -52,9 +52,9 @@ import tensorflow as tf
 				  				   + Calcium dynamic 
 	
 	nhidGlob * : Number of hidden units in global  dynamic cell
-	nhidNetw   : Number of hidden units in network dynamic cell
-	nInput     : Number of inputs  units
-	nOut       : Number of output units
+	nhidNetw * : Number of hidden units in network dynamic cell
+	nInput   * : Number of inputs  units
+	nOut     * : Number of output units
 	seqLen     : Timeserie length for RNN 
 
 	DATA
@@ -64,7 +64,7 @@ import tensorflow as tf
 			  1: normalization
 			  2: normalization and shift to positive 
 			  3: standardization + normalization
-	t2Dist : Prediction time distance
+	YDist : Prediction time distance
 
 	_______________________________________________________________
 
@@ -104,18 +104,24 @@ def simul(argDict = None, run = True):
 	v2track   = ['ng_IH_HH/MultiRNNCell/Cell0/BasicRNNCell/Linear/Matrix',
 				 'ng_Gmean', 'ng_Gstd', 'alpha_W']
 
+	#Cost parameters
+	sparsW   = 0.05
+	lossW    = 0.1
+
 	#Network Parameters
-	actfct   = tf.sigmoid 
+	actfct   = tf.nn.relu 
 	model    = '__NGCmodel__'
-	nhidGlob = 20       
+	nhidGlob = 10       
 	nhidNetw = 400      
 	nInput   = 400      
 	nOut     = 400      
-	seqLen   = 50        
+	seqLen   = 5        
+
+	nhidclassi = 5
 
 	# Data parameters
 	method = 2  
-	t2Dist = 1  
+	YDist = 1  
 
 	#Graph ----------------------------------------------------------------------------
 
@@ -124,9 +130,10 @@ def simul(argDict = None, run = True):
 			'dataset'  : dataset,   '_mPath'  : _mPath,   'saveName' : saveName, 
 			'learnRate': learnRate, 'nbIters' : nbIters,  'batchSize': batchSize, 
 			'dispStep' : dispStep,  'model'   : model,    'actfct'   : actfct,  
-			'method'   : method,    't2Dist'  : t2Dist,   'seqLen'   : seqLen,
+			'method'   : method,    'YDist'  : YDist,     'seqLen'   : seqLen,
 			'nhidGlob' : nhidGlob,  'nhidNetw': nhidNetw, 'nInput'   : nInput,
-			'nOut'     : nOut   ,   'sampRate': sampRate, 'v2track'  : v2track
+			'nOut'     : nOut   ,   'sampRate': sampRate, 'v2track'  : v2track,
+			'sparsW'   : sparsW,    'lossW'   : lossW,    'nhidclassi' : nhidclassi
 		     	 }
 
 	#Overwrite any parameters with extra arguments
@@ -139,9 +146,9 @@ def simul(argDict = None, run = True):
 	data  = loadmat(dPath)['FR']
 
 	#Running activeConn ~ Should be called seperatly 
-	graph, dataDict = activeConn(paramDict, data, run= run)
+	graph, dataDict, Loss = activeConn(paramDict, data, run= run)
 
-	return graph, dataDict
+	return graph, dataDict, Loss
 
 
 
@@ -161,7 +168,7 @@ def optoV1(argDict = None, run = True):
 	saveName = 'opto.ckpt'
 
 	# algorithm parameters
-	batchSize = 20      
+	batchSize = 1     
 	dispStep  = 100     
 	learnRate = 0.00001 
 	nbIters   = 10000
@@ -169,32 +176,43 @@ def optoV1(argDict = None, run = True):
 	v2track   = ['ng_IH_HH/MultiRNNCell/Cell0/BasicRNNCell/Linear/Matrix',
 				 'ng_Gmean', 'ng_Gstd', 'alpha_W']   
 
+	#Cost parameters
+	sparsW   = 0.05
+	lossW    = 50
+
 	#Network Parameters
 	actfct   = tf.nn.relu     
 	model    = '__NGCmodel__' 
 	nInput   = 348             
-	nhidGlob = 20             
+	nhidGlob = 10             
 	nhidNetw = 348             
 	nOut     = 348            
-	seqLen   = 10        	  
+	seqLen   = 5       	  
+
+	nhidclassi = 10
+
+	target   = 189
+	receiver = 199
 
 	# Data parameters
-	method 	= 3   
-	t2Dist 	= 1   
-	dsNo    = 2  #Dataset number 
+	method 	= 1   
+	YDist 	= 3   
 
 	#Graph build and execution --------------------------------------------------------
 
 	#Packing dictionnary
-	#Packing dictionnary
+
 	paramDict = {
-			'dataset'  : dataset,   '_mPath'  : _mPath,   'saveName' : saveName, 
-			'learnRate': learnRate, 'nbIters' : nbIters,  'batchSize': batchSize, 
-			'dispStep' : dispStep,  'model'   : model,    'actfct'   : actfct,  
-			'method'   : method,    't2Dist'  : t2Dist,   'seqLen'   : seqLen,
-			'nhidGlob' : nhidGlob,  'nhidNetw': nhidNetw, 'nInput'   : nInput,
-			'nOut'     : nOut   ,   'sampRate': sampRate, 'v2track'  : v2track
-				}
+			'dataset'  : dataset,   '_mPath'  : _mPath,   'saveName'  : saveName, 
+			'learnRate': learnRate, 'nbIters' : nbIters,  'batchSize' : batchSize, 
+			'dispStep' : dispStep,  'model'   : model,    'actfct'    : actfct,  
+			'method'   : method,    'YDist'   : YDist,    'seqLen'    : seqLen,
+			'nhidGlob' : nhidGlob,  'nhidNetw': nhidNetw, 'nInput'    : nInput,
+			'nOut'     : nOut   ,   'sampRate': sampRate, 'v2track'   : v2track,
+			'sparsW'   : sparsW,    'lossW'   : lossW,    'nhidclassi': nhidclassi,
+			'target'   : target,    'receiver': receiver
+
+		    	 }
 
 	#Overwrite any parameters with extra arguments
 	if argDict:
@@ -202,14 +220,52 @@ def optoV1(argDict = None, run = True):
 
 	# Loading data 
 	print('Loading Data      ...')
-	field = 'soma_thresh_traces' # Field of interest in dataset
-
-	#Loading data
-	dPath = _mPath + 'data/' + dataset  # Dataset path
-	data  = h5py.File(dPath)['dataset'+str(dsNo)][:]
-	
+	dataD = loadData('optoV1', _mPath, dataset)
 
 	#Running activeConn ~ Should be called seperatly 
-	graph, dataDict = activeConn(paramDict, data, run= run)
+	graph, dataDict, Loss = activeConn(paramDict, dataD, run= run)
 
-	return graph, dataDict
+	return graph, dataDict, Loss
+
+
+
+def loadData(mainName, mPath, dataset):
+	''' Will load the data for different
+		main file '''
+
+	if mainName == 'optoV1':
+
+		dsNoList =['08','09','10'] #list of datasets to load
+
+		#Loading data (baseline removed)
+		dPath = mPath + 'data/' + dataset  # Dataset path
+		dat   = h5py.File(dPath)
+
+		#Taking only elements related to dataset selected and renaming
+		dat = { key: dat[key] for No in dsNoList for key in dat if No in key}
+
+		#Number of frames per dataset (have to be identical shape)
+		T = dat['dataset10'].shape[1]
+
+		#Initializing data dictionnary
+		data = {'dataset':[], 'baseline':[], 'stimFrame':[],'stimIdx':[]}
+
+		frameSet= 0 #To count frame datasets
+		for key in sorted(dat):
+		    if   'base' in key:
+		        data['baseline'].append(dat[key][:])
+		    elif 'data' in key:
+		        data['dataset'].append(dat[key][:])
+		    elif 'Frame' in key:
+		        data['stimFrame'].append(dat[key][:]+T*frameSet)
+		        frameSet +=1 #Correcting for the stacking
+		    elif 'Idx' in key:
+		        data['stimIdx'].append(dat[key][:].T)
+
+		#Stacking database
+		data = {key: np.hstack(data[key]) for key in data}
+		#Transposing stimIdx
+		data['stimIdx'] = data['stimIdx'].T
+
+
+	return data
