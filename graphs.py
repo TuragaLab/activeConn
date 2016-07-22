@@ -4,6 +4,7 @@ import datetime
 from activeConn.tools import *
 from activeConn       import activeConnMain as ACM
 from IPython          import display
+from numpy.random     import randint
 
 import numpy                as np
 import matplotlib.pyplot    as plt
@@ -115,20 +116,13 @@ class actConnGraph(object):
 
     def __init__(self, featDict ):
 
-        #Default model parameters
-        defaults = {  'learnRate': 0.0001, 'self.nbIters':10000, 'batchSize': 50, 
-                      'self.dispStep'  :200, 'model': '__NGCmodel__',
-                      'actfct':tf.tanh,'seqLen':10, 'method':1, 'YDist':1   }      
-
-        #Updating default params with featDict
-        defaults.update(featDict)
-
+  
         #Assigining attributes from featDict
-        for key, val in defaults.items():
+        for key, val in featDict.items():
                 setattr(self, key, val)
 
         #Saving dictionnary
-        self._pDict = defaults
+        self._pDict = featDict
 
         #Specifying model
         model = getattr(self, self.model)
@@ -138,13 +132,14 @@ class actConnGraph(object):
         with graph.as_default():    
 
             #Variable placeholders  
-            self._X = tf.placeholder("float", [None, self.seqLen, self.nInput], 
-                                     name = 'X') 
 
             if 'class' in self.model:
-                self._Y = tf.placeholder("float", [None, 1], name = 'Y')
+                self._Y = tf.placeholder("float32", [None,1], name = 'Y')
+                self._X = tf.placeholder("float32", [None, self.seqLen], name = 'X') 
             else:
-                self._Y = tf.placeholder("float", [None, self.nInput], name = 'Y')
+                self._Y = tf.placeholder("float32", [None, self.nInput], name = 'Y')
+                self._X = tf.placeholder("float32", [None, self.seqLen, self.nInput], 
+                                         name = 'X') 
                         
             self._batch = tf.placeholder("int32", [], name = 'batch')                                               
 
@@ -170,6 +165,12 @@ class actConnGraph(object):
             #Cost function
             cost = self._cost()
 
+            #Gradients
+            self._grad = {var.name: tf.gradients(cost, var) for var in self.variables}
+
+            #Model label prediction
+            self._resp = self._classiPred()
+
             #To test the precision of the network
             self.precision = tf.reduce_mean(tf.pow(self._Z2 - self._Y, 2))
  
@@ -185,6 +186,7 @@ class actConnGraph(object):
 
             #Saving graph
             self.saver = tf.train.Saver()
+
 
         self.graph = graph
 
@@ -210,16 +212,20 @@ class actConnGraph(object):
 
                 #Defining weights
         self.weights = { 
-                         'classi_HO_W' : varInit([self.nhidclassi,1], 'classi_HO_W' )
+                         'classi_HO_W' : varInit([self.nhidclassi,1],
+                                                  'classi_HO_W', std = 0.1 )
                         }
 
-        self.biases  = { 'classi_HO_B': varInit([1], 'classi_HO_B') } 
+        self.biases  = { 'classi_HO_B': varInit([1], 'classi_HO_B',
+                                                std = 0.1) } 
 
-        self.masks = { }
+        self.masks   = { }
 
 
-        classiCell = rnn_cell.GRUCell(self.nhidclassi)
-        initClassi = tf.zeros([self.batchSize, classiCell.state_size])
+        classiCell = rnn_cell.BasicLSTMCell(self.nhidclassi)
+
+        #INITIAL STATE DOES NOT WORK
+        initClassi = tf.zeros([self.batchSize,classiCell.state_size], dtype='float32') 
 
         #classi
         O, S = rnn.rnn(classiCell, _Z1, dtype = tf.float32) #Output and state
@@ -456,6 +462,22 @@ class actConnGraph(object):
       ________________________________________________________________________
 
 
+                            OLD LINES TO USE BATCH CREATION
+
+
+                 if stepTr % self.dispStep == 0:
+                    stepBat = 0 #Testing steps
+                    Xtr_batch, Ytr_batch = self.batchCreation(Xtr, Ytr, 
+                                             nbIters   = self.dispStep)
+
+                feed_dict={  self._X    : Xtr_batch[stepBat,...], 
+                             self._Y    : Ytr_batch[stepBat,...],
+                             self._batch : stepTr  }
+
+
+    ________________________________________________________________________
+ 
+
 
         '''
         if 'class' in self.model: 
@@ -517,8 +539,8 @@ class actConnGraph(object):
 
         #Reshapping
         Y1 = Y1.reshape([nbIters,self.batchSize,self.seqLen,self.nInput])
-        if len(Y2.shape) == 1: #In classi models, output is 1D
-            Y2 = Y2.reshape([nbIters,self.batchSize,1])
+        if 'class' in self.model: #In classi models, output is 1D
+            Y2 = Y2.reshape([nbIters,self.batchSize,2])
         else:
             Y2 = Y2.reshape([nbIters,self.batchSize,self.nInput])
 
@@ -534,25 +556,20 @@ class actConnGraph(object):
              #If model is a classifier
 
             #Sparsity regularizer
-            sparsC       = [tf.reduce_sum(tf.abs(v)) for v in self.variables]
-            self._sparsC = tf.add_n(sparsC)*self.sparsW
+            sparsC = [tf.reduce_sum(tf.abs(v)) for v in self.variables]
+            self._sparsC = tf.add_n(sparsC)
+            #self._sparsC = tf.zeros(1)
 
             #Cross entropy
-            ngml         = tf.nn.sigmoid_cross_entropy_with_logits(self._Z2, self._Y)
-            self._ngml   = tf.reduce_sum(ngml)*self.lossW 
+            ngml = tf.nn.sigmoid_cross_entropy_with_logits(self._Z2, self._Y)
+            self._ngml = tf.reduce_sum(ngml)
 
-            cost = (self._ngml + self._sparsC) / (2*self.batchSize)
+            cost = (self._ngml*self.lossW +self._sparsC*self.sparsW) / \
+                   (2*self.batchSize)
                    
 
           else:
-            #sparsC  = tf.add_n([ tf.nn.l2_loss( self.vnames['ng_IH_HH/MultiRNNCell/Cell0/BasicRNNCell/Linear/Matrix:0'][self.nhidNetw:,:] ) ])
-            #sparsC = tf.add_n([ tf.reduce_sum( tf.abs( self.vnames[
-             #        'ng_IH_HH/BasicRNNCell/Linear/Matrix:0'][self.nhidNetw:,:] ))]) 
             sparsC  = tf.add_n([tf.reduce_sum(tf.abs(v)) for v in self.variables]) 
-            #self._sparsC  = tf.add_n([tf.nn.l2_loss(v) for v in self.variables]) 
-            #self._sparsC  = tf.reduce_sum(np.float32([0,1]))
-
-            #self._sparsC = (sparsC/self.LR) * (self.learnRate*self.sparsW)
 
             self._sparsC = (sparsC/self.LR) * (self.learnRate*self.sparsW)
 
@@ -674,36 +691,54 @@ class actConnGraph(object):
 
 
 
-    def launchGraph(self, inputData, savepath = '_.ckpt'):
+    def launchGraph(self, D, savepath = '_.ckpt'):
         # Launch the graph
         #   Arguments ... 
-        #       inputData ~ Has to be a list of 4 elements : Training_X, training_Y
+        #       D ~ Has to be a list of 4 elements : Training_X, training_Y
         #                                                    Testing_X , testing_Y.
 
         t = time.time() # Current time
         backupPath = '/tmp/backup.ckpt' # Checkpoint backup path
 
+        #Which sequence for classification mini batches
+        if 'class' in self.model:
+            trSidx  = randint(0,len(D['Ytr'][0]),[self.batchSize,self.nbIters])
+            trNSidx = randint(0,len(D['Ytr'][1]),[self.batchSize,self.nbIters])
+            teSidx  = randint(0,len(D['Yte'][0]),[self.batchSize,self.nbIters])
+            teNSidx = randint(0,len(D['Yte'][1]),[self.batchSize,self.nbIters])
+
+
         #Unpacking data
-        Xtr = inputData['Xtr']
-        Ytr = inputData['Ytr'] 
-        Xte = inputData['Xte']
-        Yte = inputData['Yte']
+        Xtr = D['Xtr']
+        Ytr = D['Ytr'] 
+        Xte = D['Xte']
+        Yte = D['Yte']
+
+        #Initialize counters
+        stepTr  = 0 #Training steps
+        stepBat = 0 #Testing steps
+        Loss    = 0 #Hold the last X points for mean Loss
+        accNum  = 0 #To calculate accuracy over time
+
+        #Initialize holders
+        ans = np.zeros([100,2])
+        self.pred   = [None]*self.nbIters
+        self.acc    = []
+        self.lossTr = [None]*self.nbIters
+        self.lossTe = []
 
         #Setting configs for minimum threads (small model)
-        # config = tf.ConfigProto(device_count={"CPU": 56},
-        #                  inter_op_parallelism_threads=1,
-        #                  intra_op_parallelism_threads=1)
+        config = tf.ConfigProto(device_count={"CPU": 88},
+                          inter_op_parallelism_threads=1,
+                          intra_op_parallelism_threads=1)
 
-        # , config = config
 
-        with tf.Session(graph=self.graph) as sess:
+        with tf.Session(graph=self.graph, config = config) as sess:
 
             #Initializing the variables
             sess.run(tf.initialize_all_variables())
 
-            stepTr  = 0 #Training steps
-            stepBat = 0 #Testing steps
-            Loss    = 0 #Hold the last X points for mean Loss
+
 
             if self.sampRate > 0:
                 samp   = 0                      #Sample
@@ -712,71 +747,91 @@ class actConnGraph(object):
             # Keep training until reach max iterations
             while stepTr < self.nbIters:
 
-                if stepTr % self.dispStep == 0:
-                    Xtr_batch, Ytr_batch = self.batchCreation(Xtr, Ytr, 
-                                                      nbIters   = self.dispStep )
+               #Train feed dictionnary 
+                FD_tr ={ self._X : np.vstack([ D['Xtr'][0][trSidx[:, stepTr],:],
+                                               D['Xtr'][1][trNSidx[:,stepTr],:] ]), 
+                         self._Y : np.vstack([ [1]*self.batchSize,
+                                               [0]*self.batchSize ]),
+                         self._batch : stepTr  }
 
-                stepBat = 0 #for batches based on display step
+                #Training fit (mean L2 loss)
+                self.lossTr[stepTr] = sess.run(self._ngml, feed_dict = FD_tr)
 
-                feed_dict={  self._X    : Xtr_batch[stepBat,...], 
-                             self._Y    : Ytr_batch[stepBat,...],
+                if stepTr % self.dispStep == 0 and stepTr > 0:
+
+                    #Test feed dictionnary 
+                    FD_te ={ self._X :  np.vstack([ D['Xte'][0][teSidx[:, stepTr],:],
+                                                    D['Xte'][1][teNSidx[:,stepTr],:] ]), 
+
+                             self._Y : np.vstack([  [1]*self.batchSize,
+                                                    [0]*self.batchSize  ]),
                              self._batch : stepTr  }
+                    
+
+                    trSpars = sess.run(self._sparsC, feed_dict = FD_tr)
+
+                    #Testing fit with new data
+                    teFit = sess.run(self.precision, feed_dict = FD_te) 
+                    self.lossTe.append(teFit) 
+
+                    #Calculating accuraty for classification
+                    if 'class' in self.model:
+                           acc = (np.sum(ans))/(100*self.batchSize*2)
+                           self.acc.append(acc)
+
+                    #Printing progress 
+                    print( "Iter: " + str(stepTr) + "/" + str(self.nbIters)           +  
+                           "   ~  L2 Loss: "   + "{:.6f}".format(self.lossTr[stepTr]) +
+                           "   ~  Accuracy: "  + "{:.2f}".format(acc*100)             + 
+                           "   |  Test fit: "  + "{:.6f}".format(teFit)    )
+
+                if 'class' in self.model:
+                       if accNum == 100:
+                            accNum = 0
+                       cla, _y = sess.run(self._resp, feed_dict =FD_tr)
+                       #print(cla)
+                       #print(_y)
+                       self.pred[stepTr] = [_y,[1,0]]
+                       ans[accNum,:] = np.squeeze(cla)
+                       accNum += 1
+
+                if stepTr >= self.nbIters-50:
+                   Loss = Loss + teFit/50
 
                 #Running backprop
-                sess.run(self.optimizer, feed_dict)
-                
+                sess.run(self.optimizer, FD_tr)
+
                 #Applying masks
                 #sess.run(self.masking)
 
-
-                if stepTr % self.dispStep == 0:
-                    testX,testY = self.batchCreation(Xte, Yte, 
-                                                nbIters   = 1)
-
-                    #Dictionnary for plotting training progress
-                    feedDict_Tr = {  self._X    : Xtr_batch[stepBat,...], 
-                                     self._Y    : Ytr_batch[stepBat,...],
-                                     self._batch : stepTr  }
-
-                    #Training fit (mean L2 loss)
-                    trFit   = sess.run(self._ngml, feed_dict = feedDict_Tr)
-
-                    #Weight sparsity
-                    trSpars = sess.run(self._sparsC, feed_dict = feedDict_Tr)
-
-                    #Testing fit with new data
-                    teFit   = sess.run(self.precision, feed_dict={ self._X    : testX[0,...], 
-                                                                   self._Y    : testY[0,...]  }) 
-
-                    #Printing progress 
-
-                    print( "Iter: " + str(stepTr) + "/" + str(self.nbIters)  +  
-                           "   ~  L2 Loss: "      + "{:.6f}".format(trFit)   +
-                           "   ~  L1 W loss: "    + "{:.6f}".format(trSpars) + 
-                           "   |  Test fit: "     + "{:.6f}".format(teFit)    )
-
-                if stepTr >= self.nbIters-50 :
-                   Loss = Loss + teFit/50
-
                 stepTr += 1
                 stepBat += 1
-
+                
                 #Tracking variables in v2track
                 if self.sampRate > 0 and not stepTr%self.sampRate:
                     self._trackVar( nbSamp, samp, self.v2track )
                     samp +=1
 
-            # - - - - - - - -   - - - - -- - - - - - - - - - - -- - - 
-
             #Saving variables
             self.saver.save(sess, savepath)
             self.saver.save(sess, backupPath)
-                        #Saving variables final state
-            self.evalVars = {v.name: v.eval() for v in tf.trainable_variables()} 
+            
+            #Saving variables final state
+            self.evalVars = {v.name: v.eval() for v in tf.trainable_variables()}
+            self.grad = sess.run(self._grad, feed_dict= FD_tr)
 
             print('\nTotal time:  ' + str(datetime.timedelta(seconds = time.time()-t)))
             
         return Loss
+
+    def _classiPred(self):
+        out  = tf.nn.sigmoid(self._Z2)
+        #Whether answer is right
+        _Y = tf.round(out)
+        Y  = self._Y# tf.constant([0,1], dtype = "int64")
+
+        resp = tf.equal(Y,_Y) 
+        return resp, out
 
 
     def _trackVar(self, nbSamp, samp, v2track):
