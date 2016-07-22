@@ -36,7 +36,8 @@ def calcResponse(data, stimFrames, stimOrder, nf = 12, nfb = 1):
     allS: Individual cells response when stimulation of any other cell
 
     ________________________________________________________________________
- 
+
+
  
 
     '''
@@ -376,7 +377,7 @@ def cellRespMulti(data, stimFrames, stimOrder, nf = 30, nfb = 1):
 
 
 
-def dataPrepClassi(dataDict, target, receiver, method = 1, seqLen = 15, aftSLen = 3): 
+def dataPrepClassi(dataDict, cells= [217,217], seqRange= [-10,20], method = 1): 
 
 
     ''' Putting the data in the right format for training for 
@@ -387,18 +388,17 @@ def dataPrepClassi(dataDict, target, receiver, method = 1, seqLen = 15, aftSLen 
                                    ARGUMENTS
     ________________________________________________________________________
 
-        aftSlen   : nb of time point after stimulation to start taking sequence
-        target    : Cell to predict if was stimulated
-        receriver : Cell to use for predicting if target was stimulated
+        cells[0] : Cell to predict if was stimulated
+        cells[1] : Cell to use for predicting if cells[0] was stimulated
 
-        seqLen : number of after stimulation 
+        seqRange[0] : Nb of time point before stimulation to consider
+        seqRange[1] : Nb of time point after  stimulation to consider
+
         method : 0 = No transformation
                  1 = standardization
                  2 = normalization
                  3 = normalization with value shifted to positive
                  4 = standardization + normalization
-
-        YDist : Number of timesteps you are tring to predict 
 
     ________________________________________________________________________
 
@@ -414,7 +414,6 @@ def dataPrepClassi(dataDict, target, receiver, method = 1, seqLen = 15, aftSLen 
                         Xtr, Xte : seqLen x nSequences x nInputs
                         Ytr, Yte : nSquences
 
-
     ________________________________________________________________________
 
     '''
@@ -424,44 +423,24 @@ def dataPrepClassi(dataDict, target, receiver, method = 1, seqLen = 15, aftSLen 
 
     nS = len(F)     #Number of stimulations
     nN = D.shape[0] #Number of units
-    nT = D.shape[1] #Number of time point
+    sL = np.sum(np.abs(seqRange))
 
-    #Calibrating data 
-    if method == 1:
-        # Standardizing
-        std  = np.tile( np.std(D, axis = 1),(nT,1)).T #Matrix of mean for each row 
-        mean = np.tile(np.mean(D, axis = 1),(nT,1)).T #Matrix of std  for each row
-        D = np.divide(D-mean,std)
-
-    elif method == 2:
-        # Normalizing 
-        D = D/np.absolute(D).max(axis=1).reshape(-1, 1)
-
-    elif method == 3:
-        # Normalizing with only positive values by shifting values in positive
-        D = D+abs(D.min())
-        D = D/D.max(axis=1).reshape(-1, 1)
-
-    elif method == 4: 
-        # Standardizing
-        std  = np.tile( np.std(D, axis = 1),(nT,1)).T #Matrix of mean for each row 
-        mean = np.tile(np.mean(D, axis = 1),(nT,1)).T #Matrix of std  for each row
-        D = np.divide(D-mean,std)
-
-        # Normalizing 
-        D = D/np.absolute(D).max(axis=1).reshape(-1, 1)
+    #Preprocessing data (stand or normalization)
+    D = preProcess(D, method= method)
 
     D = D.T #Transposing for final shape
 
     #Extracting post-stim sequences
-    # Will take 'seqLen' time points 'aftSLen' after stimulation frame
-    Dstim = np.zeros([seqLen,nS,nN])
+    # Will take 'sL' time points around (defined by stimulation frame
+    Dstim = np.zeros([sL,nS,nN])
     label = np.zeros(nS)
-    for s in range(nS):
-        Dstim[:,s,:] = D[F[s]-1+aftSLen : F[s]+seqLen+aftSLen-1,:]
 
-        #Target cell label
-        if target in I[s]:
+    for s in range(nS):
+        Dstim[:,s,:] = D[ F[s] + seqRange[0]: 
+                          F[s] + seqRange[1], : ]
+
+        #cells[0] cell label
+        if cells[0] in I[s]:
             label[s] = 1
         else:
             label[s] = 0
@@ -469,50 +448,51 @@ def dataPrepClassi(dataDict, target, receiver, method = 1, seqLen = 15, aftSLen 
     Dstim  = np.float32(Dstim) #For tensorflow
 
     #Label counts
-    labIdx1 = np.where(label == 1)[0] #Idx of target stimulation
-    labIdx0 = np.where(label == 0)[0] #Idx of non-target stimulation
+    labIdx1 = np.where(label == 1)[0] #Idx of cells[0] stimulation
+    labIdx0 = np.where(label == 0)[0] #Idx of non-cells[0] stimulation
 
-    n1 = len(labIdx1) #Number of target stimulation
-    n0 = len(labIdx0) #Number of non-target stimulation
-
+    n1 = len(labIdx1) #Number of cells[0] stimulation
+    n0 = len(labIdx0) #Number of non-cells[0] stimulation
 
     #Number of trianing examples
-    nTrain = int(n1*4/5)
-
-    #Random permutations of sequences
-    permsS  = np.random.permutation(n1) #Idx for stimulation
-    permsNS = np.random.permutation(n0) #Idx for noStim
-
-    trainIdxS  =  permsS[:nTrain]
-    trainIdxNS = permsNS[:nTrain]
-
-    testIdxS  =  permsS[nTrain:n1]
-    testIdxNS = permsNS[nTrain:n1]
+    nTrainS  = int(n1*4/5)
+    nTrainNS = int(n0*4/5)
 
     #Training set
-    trInput  = np.hstack([ Dstim[:,labIdx1[trainIdxS],  :],   #Stim data
-                           Dstim[:,labIdx0[trainIdxNS], :] ]) #No stim data
+    trInput = [ Dstim[:,labIdx1[:nTrainS],  :],  #Stim data
+                Dstim[:,labIdx0[:nTrainNS], :] ] #No stim data
 
-    trOutput = np.hstack([ label[labIdx1[trainIdxS]],
-                           label[labIdx0[trainIdxNS]] ])
+    trInput = [ label[:,:,cells[1]].T for label in trInput ]
+
+    trLabel = [ label[labIdx1[:nTrainS]], label[labIdx0[:nTrainNS]] ]
+
+    # One hot
+    # trOutput = np.zeros([len(trLabel),2])
+    # trOutput[np.arange(len(trLabel)),trLabel] = 1 
 
     #Testing set
-    teInput  = np.hstack([ Dstim[:,labIdx1[testIdxS],  :],
-                           Dstim[:,labIdx0[testIdxNS], :] ])
+    teInput  = [ Dstim[:,labIdx1[nTrainS:],  :],
+                 Dstim[:,labIdx0[nTrainNS:], :] ]
 
-    teOutput = np.hstack([ label[labIdx1[testIdxS]],
-                           label[labIdx0[testIdxNS]] ])
+    teInput = [ label[:,:,cells[1]].T for label in teInput ]
+
+    teLabel = [ label[labIdx1[nTrainS:]], label[labIdx0[nTrainNS:]] ]
 
 
-    dataDict = { 'Xtr' : trInput[:,:,receiver] , 'Ytr' : trOutput,
-                 'Xte' : teInput[:,:,receiver] , 'Yte' : teOutput,
-                 'Xall': Dstim, 'Yall': label    }
+
+    # One hot  
+    # teOutput =  np.zeros([len(teLabel),2])
+    # teOutput[np.arange(len(teLabel)),teLabel] = 1  
+
+    dataDict = { 'Xtr' : trInput , 'Ytr' : trLabel,
+                 'Xte' : teInput , 'Yte' : teLabel,
+                 'Xall': Dstim,    'Yall': label    }
 
     return dataDict
 
     
 
-def dataPrepGenerative(data, seqLen, method = 1, YDist = 1): 
+def dataPrepGenerative(data, seqRange= [10,1], method= 1): 
     ''' Putting the data in the right format for training for 
         generative models
 
@@ -556,35 +536,13 @@ def dataPrepGenerative(data, seqLen, method = 1, YDist = 1):
     #Correcting for python index
     YDist = YDist - 1 
 
-    #Dimensions
     data_num  = data.shape[1]                      # Number of time points
     data_size = data.shape[0]                      # Number of units
-    numSeq    = data_num - (seqLen + YDist + 1) # Number of sequences
-    
-    if method == 1:
-        # Standardizing
-        std  = np.tile( np.std(data, axis = 1),(data_num,1)).T #Matrix of mean for each row 
-        mean = np.tile(np.mean(data, axis = 1),(data_num,1)).T #Matrix of std  for each row
-        data = np.divide(data-mean,std)
+    numSeq    = data_num - (seqLen + YDist + 1) # Number of sequences   
 
-    elif method == 2:
-        # Normalizing 
-        data = data/np.absolute(data).max(axis=1).reshape(-1, 1)
+    #Preprocessing
+    data = preProcess(data, method = method)
 
-    elif method == 3:
-        # Normalizing with only positive values by shifting values in positive
-        data = data+abs(data.min())
-        data = data/data.max(axis=1).reshape(-1, 1)
-
-    elif method == 4: 
-        # Standardizing
-        std  = np.tile( np.std(data, axis = 1),(data_num,1)).T #Matrix of mean for each row 
-        mean = np.tile(np.mean(data, axis = 1),(data_num,1)).T #Matrix of std  for each row
-        data = np.divide(data-mean,std)
-
-        # Normalizing 
-        data = data/np.absolute(data).max(axis=1).reshape(-1, 1)
-    
     # Label vectors (Ytr)
     alOutput  = data[:,seqLen+YDist:-1]                 # Take the seqLen+1 vector as output
 
@@ -759,6 +717,37 @@ def remBaseline(data, percentile = 10, binsize = 1000):
 
     return dataBL, baseline
 
+def preProcess(D, method = 1):
+        #Calibrating data 
+    nT = D.shape[1] #Number of time point
+
+    #Calibrating data 
+    if method == 1:
+        # Standardizing
+        std  = np.tile( np.std(D, axis = 1),(nT,1)).T #Matrix of mean for each row 
+        mean = np.tile(np.mean(D, axis = 1),(nT,1)).T #Matrix of std  for each row
+        D = np.divide(D-mean,std)
+
+    elif method == 2:
+        # Normalizing 
+        D = D/np.absolute(D).max(axis=1).reshape(-1, 1)
+
+    elif method == 3:
+        # Normalizing with only positive values by shifting values in positive
+        D = D+abs(D.min())
+        D = D/D.max(axis=1).reshape(-1, 1)
+
+    elif method == 4: 
+        # Standardizing
+        std  = np.tile( np.std(D, axis = 1),(nT,1)).T #Matrix of mean for each row 
+        mean = np.tile(np.mean(D, axis = 1),(nT,1)).T #Matrix of std  for each row
+        D = np.divide(D-mean,std)
+
+        # Normalizing 
+        D = D/np.absolute(D).max(axis=1).reshape(-1, 1)
+
+    return D
+
 
 def shapeData(_Xtr, seqLen, nInput):
     '''
@@ -805,7 +794,7 @@ def stim_nstim_split(data,frameSet):
     return data_nstim, data_stim
 
 
-def varInit(dim, Wname, train = True):
+def varInit(dim, Wname, train = True, std = 0):
     ''' 
     Will create a tf weight matrix with weight values proportional
     to number of neurons. 
@@ -818,7 +807,8 @@ def varInit(dim, Wname, train = True):
     
     dim   : Dimension of the variable to create (can be vector or vector)
     Wname : Name of the variable
-    train : If variable is trainable or not.  
+    train : If variable is trainable or not.
+    std   : standart deviation of weights
 
     ________________________________________________________________________
 
@@ -830,8 +820,11 @@ def varInit(dim, Wname, train = True):
 
     numUnit = sum(dim)  #Total number of units projecting to 
 
+    if not std:
+        std = 1/ np.sqrt(numUnit)
+
     W = tf.get_variable( Wname, initializer = tf.random_normal( dim,
-                                              stddev = 1/ np.sqrt(numUnit)), 
+                                              stddev = std), 
                          trainable= train )
     return W
 
