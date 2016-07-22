@@ -39,7 +39,7 @@ def activeConn(paramDict, data, run = True):
                'dataset':'FR_RNN.mat', '_mPath': expanduser("~") + '/.activeConn/',
                'saveName': 'ckpt.ckpt', 'learnRate': 0.0001, 'nbIters':10000,
                'batchSize': 50, 'dispStep':200, 'model': '__NGCmodel__',
-               'actfct':tf.tanh,'seqLen':10, 'method':1, 'YDist':1 , 'sampRate':0             
+               'actfct':tf.tanh,'method':1, 'YDist':1 , 'sampRate':0             
              }       
 
     #Updatating pDict with input dictionnary
@@ -54,26 +54,23 @@ def activeConn(paramDict, data, run = True):
     #Formatting data
     if type(data) is dict:
         if 'class' in pDict['model']:
-            pDict['nInput'] = 1
+            pDict['nInput']    = 1
+            pDict['batchSize'] = 1
             dataDict = dataPrepClassi( data,
-                                       target  = pDict['target'],
-                                       receiver= pDict['receiver'],
-                                       method  = pDict['method'],
-                                       seqLen  = pDict['seqLen'], 
-                                       aftSLen = pDict['YDist']   )
+                                       cells    = pDict['cells'],
+                                       seqRange = pDict['seqRange'], 
+                                       method   = pDict['method']  )
         else:
             dataDict = dataPrepGenerative( data['dataset'], 
-                                       seqLen = pDict['seqLen'],
-                                       method = pDict['method'], 
-                                       YDist  = pDict['YDist']   )
+                                           seqRange = pDict['seqRange'],
+                                           method   = pDict['method'] )
 
         tempD = {key: data[key] for key in data if key not in 'dataset'}
         dataDict.update(tempD)
     else:
         dataDict = dataPrepGenerative( data, 
-                                       seqLen = pDict['seqLen'],
-                                       method = pDict['method'], 
-                                       YDist  = pDict['YDist']  
+                                       seqRange = pDict['seqRange'],
+                                       method   = pDict['method'] 
                                        )
 
     #InputSize warming
