@@ -1,0 +1,50 @@
+
+{
+    "language"        : "PYTHON",
+    "main-file"       : "spear_aconn_noisy.py",
+    "experiment-name" : "ACM_Sim_noisy_21_07_16_night",
+    "likelihood"      : "GAUSSIAN",
+    "variables" : {
+                    "sparsW" : {
+                                    "type" : "FLOAT",
+                                    "size" : 1,
+                                    "min"  : 0.000001,
+                                    "max"  : 1
+                                },
+                    "lossW" : {
+                                    "type" : "FLOAT",
+                                    "size" : 1,
+                                    "min"  : 0.00001,
+                                    "max"  : 1
+                               },
+
+                    "learnRate" : {
+                                    "type" : "FLOAT",
+                                    "size" : 1,
+                                    "min"  : 0.000001,
+                                    "max"  : 1
+                                  }
+                                ,
+                    "nhidclassi": {
+                                    "type" : "INT",
+                                    "size" : 1,
+                                    "min"  : 1,
+                                    "max"  : 20
+                                    }
+                                ,
+                    "seqRange1":     {
+                                    "type" : "INT",
+                                    "size" : 1,
+                                    "min"  : -20,
+                                    "max"  : -1
+                                    }
+                                ,
+                    "seqRange2":     {
+                                    "type" : "INT",
+                                    "size" : 1,
+                                    "min"  : 1,
+                                    "max"  : 20
+                                    }
+                      
+                    }
+}
