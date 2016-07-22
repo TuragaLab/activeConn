@@ -127,14 +127,16 @@ def simul(argDict = None, run = True):
 
 	#Packing dictionnary
 	paramDict = {
-			'dataset'  : dataset,   '_mPath'  : _mPath,   'saveName' : saveName, 
-			'learnRate': learnRate, 'nbIters' : nbIters,  'batchSize': batchSize, 
-			'dispStep' : dispStep,  'model'   : model,    'actfct'   : actfct,  
-			'method'   : method,    'YDist'  : YDist,     'seqLen'   : seqLen,
-			'nhidGlob' : nhidGlob,  'nhidNetw': nhidNetw, 'nInput'   : nInput,
-			'nOut'     : nOut   ,   'sampRate': sampRate, 'v2track'  : v2track,
-			'sparsW'   : sparsW,    'lossW'   : lossW,    'nhidclassi' : nhidclassi
-		     	 }
+			'dataset'  : dataset,   '_mPath'  : _mPath,   'saveName'  : saveName, 
+			'learnRate': learnRate, 'nbIters' : nbIters,  'batchSize' : batchSize, 
+			'dispStep' : dispStep,  'model'   : model,    'actfct'    : actfct,  
+			'method'   : method,    'seqRange': seqRange, 'seqLen'    : seqLen,
+			'nhidGlob' : nhidGlob,  'nhidNetw': nhidNetw, 'nInput'    : nInput,
+			'nOut'     : nOut   ,   'sampRate': sampRate, 'v2track'   : v2track,
+			'sparsW'   : sparsW,    'lossW'   : lossW,    'nhidclassi': nhidclassi,
+			'cells'    : cells
+
+		    	 }
 
 	#Overwrite any parameters with extra arguments
 	if argDict:
@@ -168,35 +170,33 @@ def optoV1(argDict = None, run = True):
 	saveName = 'opto.ckpt'
 
 	# algorithm parameters
-	batchSize = 1     
+	batchSize = 2     
 	dispStep  = 100     
-	learnRate = 0.00001 
+	learnRate = 0.0001 
 	nbIters   = 10000
 	sampRate  = 0
 	v2track   = ['ng_IH_HH/MultiRNNCell/Cell0/BasicRNNCell/Linear/Matrix',
 				 'ng_Gmean', 'ng_Gstd', 'alpha_W']   
 
 	#Cost parameters
-	sparsW   = 0.05
-	lossW    = 50
+	sparsW   = 0.000005
+	lossW    = 0.5
 
 	#Network Parameters
-	actfct   = tf.nn.relu     
-	model    = '__NGCmodel__' 
-	nInput   = 348             
+	actfct   = tf.tanh    
+	model    = '__classOpto__' 
+	nInput   = 1             
 	nhidGlob = 10             
 	nhidNetw = 348             
-	nOut     = 348            
-	seqLen   = 5       	  
+	nOut     = 348                  	  
 
-	nhidclassi = 10
-
-	target   = 189
-	receiver = 199
+	nhidclassi = 5
 
 	# Data parameters
-	method 	= 1   
-	YDist 	= 3   
+	method   = 1
+	cells    = [217,217]
+	seqRange = [-10,20]    
+
 
 	#Graph build and execution --------------------------------------------------------
 
@@ -206,17 +206,22 @@ def optoV1(argDict = None, run = True):
 			'dataset'  : dataset,   '_mPath'  : _mPath,   'saveName'  : saveName, 
 			'learnRate': learnRate, 'nbIters' : nbIters,  'batchSize' : batchSize, 
 			'dispStep' : dispStep,  'model'   : model,    'actfct'    : actfct,  
-			'method'   : method,    'YDist'   : YDist,    'seqLen'    : seqLen,
+			'method'   : method,    'seqRange': seqRange, 
 			'nhidGlob' : nhidGlob,  'nhidNetw': nhidNetw, 'nInput'    : nInput,
 			'nOut'     : nOut   ,   'sampRate': sampRate, 'v2track'   : v2track,
 			'sparsW'   : sparsW,    'lossW'   : lossW,    'nhidclassi': nhidclassi,
-			'target'   : target,    'receiver': receiver
+			'cells'    : cells
 
 		    	 }
 
 	#Overwrite any parameters with extra arguments
 	if argDict:
+		if 'seqRange1' in argDict and 'seqRange2' in argDict:
+			argDict['seqRange'] = [argDict['seqRange1'],
+			                       argDict['seqRange2']]
 		paramDict.update(argDict)
+	#Lenght of sequences
+	paramDict['seqLen'] = np.sum(np.abs(paramDict['seqRange']))
 
 	# Loading data 
 	print('Loading Data      ...')
