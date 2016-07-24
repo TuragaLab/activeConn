@@ -56,39 +56,9 @@ from tensorflow.python.ops.constant_op import constant  as const
     _VNoise  : Adding stochasticity in all the tensorflow graph 
                   variables after every update for a stotastic 
                   gradient descent. 
-    
-    launchGraph : Will lauch the training of the model.
-
-
-    showVars    : Will plot the variables with imshow (matrices)
-                  and plot (vectors)
-
-    plotfit     : Will plot the test set and the prediction of 
-                  the model.
-
-    _________________________________________________________________________
-
-                                       MASKING
-    _________________________________________________________________________
-
-
-
-    Masks are used to modulate the parameter space that can be
-    explored by the model. They are applied after every variable
-    update.
-
-     The first character of a mask has a meaning :
-    
-                       0 : Mask replace the respective weight
-                       1 : Mask is multipled with the respective weight
-                       2 : Mask is added to the respective weight
-    
-     Mask operations will be executed in the same order
-
-     '_M' should be added at the end of the name if the name in the weights 
-     dictionnary would be identical otherwise. '_W' can be added to the 
-     corresponding name variable instead of '_M' to distinguish them more
-     easily.
+      
+df more
+     easily. df asdf sadf asdf
 
      ________________________________________________________________________
 
@@ -112,7 +82,6 @@ class actConnGraph(object):
     ________________________________________________________________________
 
     '''
-
 
     def __init__(self, featDict ):
 
@@ -147,11 +116,11 @@ class actConnGraph(object):
             _Z1 = shapeData(self._X, self.seqLen, self.nInput)
 
             #Learning rate decay 
-            self.LR = tf.train.exponential_decay(self.learnRate, #LR intial value
+            LR = tf.train.exponential_decay(self.learnRate, #LR intial value
                                             self._batch,         #Current batch
-                                            500,                 #Decay step
-                                            0.98,                #Decay rate
-                                            staircase = False)
+                                            200,                 #Decay step
+                                            0.95,                #Decay rate
+                                            staircase = True)
             
             #Prediction using models
             self._Z2 = model(_Z1)
@@ -176,7 +145,7 @@ class actConnGraph(object):
  
             #Backpropagation
             self.optimizer = tf.train.AdamOptimizer( learning_rate = 
-                                                     self.LR ).minimize(cost)
+                                                     LR ).minimize(cost)
 
             #Adding gaussian noise to variables updates
             #self.V_add_noise = self._VNoise(self.variables) # List of var.assign_add(noise) for all variables
@@ -217,7 +186,7 @@ class actConnGraph(object):
                         }
 
         self.biases  = { 'classi_HO_B': varInit([1], 'classi_HO_B',
-                                                std = 0.1) } 
+                                                std = 1) } 
 
         self.masks   = { }
 
@@ -564,14 +533,16 @@ class actConnGraph(object):
             ngml = tf.nn.sigmoid_cross_entropy_with_logits(self._Z2, self._Y)
             self._ngml = tf.reduce_sum(ngml)
 
-            cost = (self._ngml*self.lossW +self._sparsC*self.sparsW) / \
-                   (2*self.batchSize)
-                   
+            #cost = (self._ngml*self.lossW +self._sparsC*self.sparsW) / \
+            #      (2*self.batchSize)
 
+            cost = (self._ngml*self.lossW) / (2*self.batchSize)
+                   
           else:
+
             sparsC  = tf.add_n([tf.reduce_sum(tf.abs(v)) for v in self.variables]) 
 
-            self._sparsC = (sparsC/self.LR) * (self.learnRate*self.sparsW)
+            self._sparsC = sparsC*self.sparsW
 
             #Sum of square distance
             self._ngml = tf.reduce_sum(tf.pow(self._Z2 - self._Y, 2))*self.lossW
@@ -691,11 +662,13 @@ class actConnGraph(object):
 
 
 
-    def launchGraph(self, D, savepath = '_.ckpt'):
+    def launchGraph(self, D, detail = True, savepath = '_.ckpt'):
         # Launch the graph
         #   Arguments ... 
         #       D ~ Has to be a list of 4 elements : Training_X, training_Y
         #                                                    Testing_X , testing_Y.
+        # Detail : Will add predictions, testing scores, training scores, accuracy 
+        #          gradient in the graph as attributes at every time step. 
 
         t = time.time() # Current time
         backupPath = '/tmp/backup.ckpt' # Checkpoint backup path
@@ -721,11 +694,16 @@ class actConnGraph(object):
         accNum  = 0 #To calculate accuracy over time
 
         #Initialize holders
-        ans = np.zeros([100,2])
-        self.pred   = [None]*self.nbIters
-        self.acc    = []
-        self.lossTr = [None]*self.nbIters
-        self.lossTe = []
+        if detail:
+            #Storing more information
+            self.pred   = [None]*self.nbIters
+            self.grad   = [None]*self.nbIters
+            self.lossTr = [None]*self.nbIters
+            self.lossTe = []
+
+        ans = np.round(np.random.rand(500,2))
+        self.acc = []
+
 
         #Setting configs for minimum threads (small model)
         config = tf.ConfigProto(device_count={"CPU": 88},
@@ -738,45 +716,60 @@ class actConnGraph(object):
             #Initializing the variables
             sess.run(tf.initialize_all_variables())
 
-
-
             if self.sampRate > 0:
-                samp   = 0                      #Sample
+                samp   = 0                           #Sample
                 nbSamp = self.nbIters//self.sampRate #Number of sample
 
             # Keep training until reach max iterations
             while stepTr < self.nbIters:
 
-               #Train feed dictionnary 
-                FD_tr ={ self._X : np.vstack([ D['Xtr'][0][trSidx[:, stepTr],:],
-                                               D['Xtr'][1][trNSidx[:,stepTr],:] ]), 
-                         self._Y : np.vstack([ [1]*self.batchSize,
-                                               [0]*self.batchSize ]),
-                         self._batch : stepTr  }
+                #Train feed dictionnary 
+                FD_tr = self._feedDict(D['Xtr'], stepTr ,trSidx, trNSidx)
+                #Test feed dictionnary 
+                FD_te = self._feedDict(D['Xte'], stepTr ,teSidx, teNSidx)
 
-                #Training fit (mean L2 loss)
-                self.lossTr[stepTr] = sess.run(self._ngml, feed_dict = FD_tr)
+                if detail:
+                    if 'class' in self.model:
+                           if accNum == 500:
+                                accNum = 0
+                           cla, _y = sess.run(self._resp, feed_dict =FD_te)
+                           self.pred[stepTr] = [_y,[1,0]]
+                           ans[accNum,:] = np.squeeze(cla)
+                           accNum += 1
 
-                if stepTr % self.dispStep == 0 and stepTr > 0:
+                    if stepTr >= self.nbIters-50:
+                       Loss = Loss + teFit/50
 
-                    #Test feed dictionnary 
-                    FD_te ={ self._X :  np.vstack([ D['Xte'][0][teSidx[:, stepTr],:],
-                                                    D['Xte'][1][teNSidx[:,stepTr],:] ]), 
+                    self.lossTr[stepTr] = sess.run(self._ngml, feed_dict = FD_tr)
+                    self.grad[stepTr]   = sess.run(self._grad, feed_dict= FD_tr)
 
-                             self._Y : np.vstack([  [1]*self.batchSize,
-                                                    [0]*self.batchSize  ]),
-                             self._batch : stepTr  }
-                    
+                                    #Tracking variables in v2track
+                    if self.sampRate > 0 and not stepTr%self.sampRate:
+                        self._trackVar( nbSamp, samp, self.v2track )
+                        samp +=1
 
-                    trSpars = sess.run(self._sparsC, feed_dict = FD_tr)
+                elif stepTr >= self.nbIters-500:
+                    if 'class' in self.model:
+                           if accNum == 500:
+                                accNum = 0
+                           cla, _y = sess.run(self._resp, feed_dict =FD_te)
+
+                           ans[accNum,:]  = np.squeeze(cla)
+                           accNum += 1
+
+
+                if detail and stepTr % self.dispStep == 0:
+
+                    #trSpars = sess.run(self._sparsC, feed_dict = FD_tr)
 
                     #Testing fit with new data
-                    teFit = sess.run(self.precision, feed_dict = FD_te) 
+                    teFit = sess.run(self._ngml, feed_dict = FD_te) 
+
                     self.lossTe.append(teFit) 
 
                     #Calculating accuraty for classification
                     if 'class' in self.model:
-                           acc = (np.sum(ans))/(100*self.batchSize*2)
+                           acc = (np.sum(ans))/(500*self.batchSize*2)
                            self.acc.append(acc)
 
                     #Printing progress 
@@ -784,19 +777,6 @@ class actConnGraph(object):
                            "   ~  L2 Loss: "   + "{:.6f}".format(self.lossTr[stepTr]) +
                            "   ~  Accuracy: "  + "{:.2f}".format(acc*100)             + 
                            "   |  Test fit: "  + "{:.6f}".format(teFit)    )
-
-                if 'class' in self.model:
-                       if accNum == 100:
-                            accNum = 0
-                       cla, _y = sess.run(self._resp, feed_dict =FD_tr)
-                       #print(cla)
-                       #print(_y)
-                       self.pred[stepTr] = [_y,[1,0]]
-                       ans[accNum,:] = np.squeeze(cla)
-                       accNum += 1
-
-                if stepTr >= self.nbIters-50:
-                   Loss = Loss + teFit/50
 
                 #Running backprop
                 sess.run(self.optimizer, FD_tr)
@@ -806,11 +786,8 @@ class actConnGraph(object):
 
                 stepTr += 1
                 stepBat += 1
-                
-                #Tracking variables in v2track
-                if self.sampRate > 0 and not stepTr%self.sampRate:
-                    self._trackVar( nbSamp, samp, self.v2track )
-                    samp +=1
+
+            self.finalAcc = (np.sum(ans))/(500*self.batchSize*2)
 
             #Saving variables
             self.saver.save(sess, savepath)
@@ -818,9 +795,9 @@ class actConnGraph(object):
             
             #Saving variables final state
             self.evalVars = {v.name: v.eval() for v in tf.trainable_variables()}
-            self.grad = sess.run(self._grad, feed_dict= FD_tr)
 
-            print('\nTotal time:  ' + str(datetime.timedelta(seconds = time.time()-t)))
+            #print('Final accuracy : {:.2f}'.format(self.finalAcc*100))
+           # print('\nTotal time:  ' + str(datetime.timedelta(seconds = time.time()-t)))
             
         return Loss
 
@@ -831,7 +808,17 @@ class actConnGraph(object):
         Y  = self._Y# tf.constant([0,1], dtype = "int64")
 
         resp = tf.equal(Y,_Y) 
-        return resp, out
+        return resp, _Y
+
+    def _feedDict(self, D, stepTr ,idxS, idxNS):
+
+        FD ={ self._X : np.vstack([ D[0][idxS[:, stepTr],:],
+                                    D[1][idxNS[:,stepTr],:] ]), 
+              self._Y : np.vstack([ [1]*self.batchSize,
+                                    [0]*self.batchSize ]),
+              self._batch : stepTr  }
+
+        return FD
 
 
     def _trackVar(self, nbSamp, samp, v2track):
