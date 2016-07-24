@@ -376,8 +376,8 @@ def cellRespMulti(data, stimFrames, stimOrder, nf = 30, nfb = 1):
 
 
 
-
-def dataPrepClassi(dataDict, cells= [217,217], seqRange= [-10,20], method = 1): 
+ 
+def dataPrepClassi(dataDict, ctrl= 'spont', cells= [217,217], seqRange= [-10,20], method = 1): 
 
 
     ''' Putting the data in the right format for training for 
@@ -417,18 +417,24 @@ def dataPrepClassi(dataDict, cells= [217,217], seqRange= [-10,20], method = 1):
     ________________________________________________________________________
 
     '''
-    F = dataDict['stimFrame'] #Frame of stimulation
-    I = dataDict['stimIdx']   #Index of neuron stimulated
-    D = dataDict['dataset']   #Dataset
+    F  = dataDict['stimFrame'] #Frame of stimulation
+    I  = dataDict['stimIdx']   #Index of neuron stimulated
+    B  = dataDict['baseline']
+    D  = dataDict['dataset']   #Dataset
+
+    #Spontaneous datasets
+    DS = dataDict['datasetSpont'] #Spontaneous activity dataset
+    BS = dataDict['baselineSpont']
 
     nS = len(F)     #Number of stimulations
     nN = D.shape[0] #Number of units
-    sL = np.sum(np.abs(seqRange))
+    sL = np.sum(np.abs(seqRange)) #Sequence lenght
 
     #Preprocessing data (stand or normalization)
-    D = preProcess(D, method= method)
+    D =  preProcess(D,  method = method, base = B)
+    DS = preProcess(DS, method = method, base = BS)
 
-    D = D.T #Transposing for final shape
+    D = D.T ; DS = DS.T #Transposing for final shape
 
     #Extracting post-stim sequences
     # Will take 'sL' time points around (defined by stimulation frame
@@ -458,27 +464,48 @@ def dataPrepClassi(dataDict, cells= [217,217], seqRange= [-10,20], method = 1):
     nTrainS  = int(n1*4/5)
     nTrainNS = int(n0*4/5)
 
-    #Training set
-    trInput = [ Dstim[:,labIdx1[:nTrainS],  :],  #Stim data
-                Dstim[:,labIdx0[:nTrainNS], :] ] #No stim data
+    if ctrl == 'spont':
+        #Will use spontaneous activity for no-stim label data
+        
+        #print('Using spontaneous data for label 0.\n')
 
-    trInput = [ label[:,:,cells[1]].T for label in trInput ]
+        #Training inputs
+        spontIdxTr = np.random.randint(0,np.shape(DS)[0]-sL,nTrainNS)
+        SPTr = np.dstack([DS[idx:idx+sL,:] for idx 
+                          in spontIdxTr]).transpose(0,2,1)
 
+        #Stacking both label sequences [ Stim, noStim(spont) ]
+        trInput = [ Dstim[:,labIdx1[:nTrainS],:], SPTr ]
+        
+        #Testing input
+        spontIdxTe = np.random.randint(0,np.shape(DS)[0]-sL,n0-nTrainNS)
+        SPTe = np.dstack([DS[idx:idx+sL,:] for idx 
+                          in spontIdxTe]).transpose(0,2,1)
+        
+        #Stacking both label sequences [ Stim, noStim(spont) ]
+        teInput = [ Dstim[:,labIdx1[nTrainS:],:], SPTe ]
+        
+        
+    elif ctrl == 'noStim':
+        #Training set
+        #print('Using random data for label 0.\n')
+        trInput = [ Dstim[:,labIdx1[:nTrainS],  :],  #Stim data
+                    Dstim[:,labIdx0[:nTrainNS], :] ] #No stim data
+        
+        #Testing set
+        teInput  = [ Dstim[:,labIdx1[nTrainS:],  :],
+                     Dstim[:,labIdx0[nTrainNS:], :] ]
+
+    #Taking  only decoding cell
+    trInput = [ lab[:,:,cells[1]].T for lab in trInput ] 
+    teInput = [ lab[:,:,cells[1]].T for lab in teInput ]
+
+    #Stacking label (stim, nostim)
     trLabel = [ label[labIdx1[:nTrainS]], label[labIdx0[:nTrainNS]] ]
-
-    # One hot
-    # trOutput = np.zeros([len(trLabel),2])
-    # trOutput[np.arange(len(trLabel)),trLabel] = 1 
-
-    #Testing set
-    teInput  = [ Dstim[:,labIdx1[nTrainS:],  :],
-                 Dstim[:,labIdx0[nTrainNS:], :] ]
-
-    teInput = [ label[:,:,cells[1]].T for label in teInput ]
-
     teLabel = [ label[labIdx1[nTrainS:]], label[labIdx0[nTrainNS:]] ]
 
-
+    print( 'Stimulated cell : {}\n'.format(cells[0]) +
+           'Decoding cell   : {}\n'.format(cells[1]) )
 
     # One hot  
     # teOutput =  np.zeros([len(teLabel),2])
@@ -717,7 +744,7 @@ def remBaseline(data, percentile = 10, binsize = 1000):
 
     return dataBL, baseline
 
-def preProcess(D, method = 1):
+def preProcess(D, method = 1, base = None):
         #Calibrating data 
     nT = D.shape[1] #Number of time point
 
@@ -745,6 +772,11 @@ def preProcess(D, method = 1):
 
         # Normalizing 
         D = D/np.absolute(D).max(axis=1).reshape(-1, 1)
+
+    elif method == 5:
+        #Delta f over F 
+        D = D/base
+        D = preProcess(D, method = 1, base = None)
 
     return D
 
