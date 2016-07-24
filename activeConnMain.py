@@ -11,266 +11,301 @@
 
 from activeConn.activeConnSet import activeConn
 from scipy.io                 import loadmat
-from activeConn.tools 		  import *
+from activeConn.tools         import *
 
 import h5py 
 import tensorflow as tf
 
 '''
-	_______________________________________________________________
+    _______________________________________________________________
 
-								PARAMETERS
-	_______________________________________________________________
+                                PARAMETERS
+    _______________________________________________________________
 
-	Parameters that could make the models fail are not included in 
-	the defaults parameters in order to avoid subtle bugs.
+    Parameters that could make the models fail are not included in 
+    the defaults parameters in order to avoid subtle bugs.
 
-	These parameters have a '*' next to them in the list bellow.
+    These parameters have a '*' next to them in the list bellow.
 
-	PATH
-	----------
-	_mPath   : Path containing data, ckpt folder and main files
-	dataset  : Dataset name to load
-	saveName : Name of checkpoint to be saved
-				 ~> Will be saved in '_mPath/checkpoints/saveName' 	
-		   	  	 ~> A checkpoint will be saved '/tmp/backup.ckpt'
-	ALGORITHM
-	-----------
-	batchSize : Number of example per batch
-	dispStep  : Number of iterations before display training info
-	learnRate : Training learning rate
-	nbIters   : Number of training iterations
-	sampRate  : Rate at which variables sampling is done
-	v2track   : List of name of variables to track (sample)
-				 ~> If set to 0, no sampling will be performed
+    PATH
+    ----------
+    _mPath   : Path containing data, ckpt folder and main files
+    dataset  : Dataset name to load
+    saveName : Name of checkpoint to be saved
+                 ~> Will be saved in '_mPath/checkpoints/saveName'  
+                 ~> A checkpoint will be saved '/tmp/backup.ckpt'
+    ALGORITHM
+    -----------
+    batchSize : Number of example per batch
+    dispStep  : Number of iterations before display training info
+    learnRate : Training learning rate
+    nbIters   : Number of training iterations
+    sampRate  : Rate at which variables sampling is done
+    v2track   : List of name of variables to track (sample)
+                 ~> If set to 0, no sampling will be performed
 
-	NETWORK
-	------------
-	actfct     : Model's activation function for NN 
-	model      : Model name to use
-				  '__NGCmodel__' : RNN( Network & Global cell) 
-				  				   + Calcium dynamic 
-	
-	nhidGlob * : Number of hidden units in global  dynamic cell
-	nhidNetw * : Number of hidden units in network dynamic cell
-	nInput   * : Number of inputs  units
-	nOut     * : Number of output units
-	seqLen     : Timeserie length for RNN 
+    NETWORK
+    ------------
+    actfct     : Model's activation function for NN 
+    model      : Model name to use
+                  '__NGCmodel__' : RNN( Network & Global cell) 
+                                   + Calcium dynamic 
+    
+    nhidGlob * : Number of hidden units in global  dynamic cell
+    nhidNetw * : Number of hidden units in network dynamic cell
+    nInput   * : Number of inputs  units
+    nOut     * : Number of output units
+    seqLen     : Timeserie length for RNN 
 
-	DATA
-	---------
-	method  : Data preparation method
-			  0: standardization
-			  1: normalization
-			  2: normalization and shift to positive 
-			  3: standardization + normalization
-	YDist : Prediction time distance
+    DATA
+    ---------
+    method  : Data preparation method
+              0: standardization
+              1: normalization
+              2: normalization and shift to positive 
+              3: standardization + normalization
+    YDist : Prediction time distance
 
-	_______________________________________________________________
+    _______________________________________________________________
 
 
 '''
 
 def simul(argDict = None, run = True):
-	''' 
-	Parameter file for simulation.
-	
-	_______________________________________________________________
+    ''' 
+    Parameter file for simulation.
+    
+    _______________________________________________________________
 
-							ARGUMENTS
-	_______________________________________________________________
+                            ARGUMENTS
+    _______________________________________________________________
 
-	argDict : Overwriting certain paramers. Has to be of type dict
-	run     : If running the simulation or not
+    argDict : Overwriting certain paramers. Has to be of type dict
+    run     : If running the simulation or not
 
-	_______________________________________________________________
+    _______________________________________________________________
 
-	'''
+    '''
 
-	#Parameters -----------------------------------------------------------------------
+    #Parameters -----------------------------------------------------------------------
 
-	#dataset = 'kmeans0.npy'   #Dataset name
-	_mPath   = '/groups/turaga/home/castonguayp/research/activeConn/' # Main path
-	dataset  = 'FR_RNN.mat'
-	#_mPath   = '/home/phabc/Main/research/janelia/turaga/Shotgun/'
-	saveName = 'sim.ckpt'
+    #dataset = 'kmeans0.npy'   #Dataset name
+    _mPath   = '/groups/turaga/home/castonguayp/research/activeConn/' # Main path
+    dataset  = 'FR_RNN.mat'
+    #_mPath   = '/home/phabc/Main/research/janelia/turaga/Shotgun/'
+    saveName = 'sim.ckpt'
 
-	# algorithm parameters
-	batchSize = 20      
-	dispStep  = 100
-	learnRate = 0.0001
-	nbIters   = 10000   
-	sampRate  = 100
-	v2track   = ['ng_IH_HH/MultiRNNCell/Cell0/BasicRNNCell/Linear/Matrix',
-				 'ng_Gmean', 'ng_Gstd', 'alpha_W']
+    # algorithm parameters
+    batchSize = 20      
+    dispStep  = 100
+    learnRate = 0.0001
+    nbIters   = 10000   
+    sampRate  = 100
+    v2track   = ['ng_IH_HH/MultiRNNCell/Cell0/BasicRNNCell/Linear/Matrix',
+                 'ng_Gmean', 'ng_Gstd', 'alpha_W']
 
-	#Cost parameters
-	sparsW   = 0.05
-	lossW    = 0.1
+    #Cost parameters
+    sparsW   = 0.05
+    lossW    = 0.1
 
-	#Network Parameters
-	actfct   = tf.nn.relu 
-	model    = '__NGCmodel__'
-	nhidGlob = 10       
-	nhidNetw = 400      
-	nInput   = 400      
-	nOut     = 400      
-	seqLen   = 5        
+    #Network Parameters
+    actfct   = tf.nn.relu 
+    model    = '__NGCmodel__'
+    nhidGlob = 10       
+    nhidNetw = 400      
+    nInput   = 400      
+    nOut     = 400      
+    seqLen   = 5        
 
-	nhidclassi = 5
+    nhidclassi = 5
 
-	# Data parameters
-	method = 2  
-	YDist = 1  
+    # Data parameters
+    method = 2  
+    YDist = 1  
 
-	#Graph ----------------------------------------------------------------------------
+    #Graph ----------------------------------------------------------------------------
 
-	#Packing dictionnary
-	paramDict = {
-			'dataset'  : dataset,   '_mPath'  : _mPath,   'saveName'  : saveName, 
-			'learnRate': learnRate, 'nbIters' : nbIters,  'batchSize' : batchSize, 
-			'dispStep' : dispStep,  'model'   : model,    'actfct'    : actfct,  
-			'method'   : method,    'seqRange': seqRange, 'seqLen'    : seqLen,
-			'nhidGlob' : nhidGlob,  'nhidNetw': nhidNetw, 'nInput'    : nInput,
-			'nOut'     : nOut   ,   'sampRate': sampRate, 'v2track'   : v2track,
-			'sparsW'   : sparsW,    'lossW'   : lossW,    'nhidclassi': nhidclassi,
-			'cells'    : cells
+    #Packing dictionnary
+    paramDict = {
+            'dataset'  : dataset,   '_mPath'  : _mPath,   'saveName'  : saveName, 
+            'learnRate': learnRate, 'nbIters' : nbIters,  'batchSize' : batchSize, 
+            'dispStep' : dispStep,  'model'   : model,    'actfct'    : actfct,  
+            'method'   : method,    'seqRange': seqRange, 'seqLen'    : seqLen,
+            'nhidGlob' : nhidGlob,  'nhidNetw': nhidNetw, 'nInput'    : nInput,
+            'nOut'     : nOut   ,   'sampRate': sampRate, 'v2track'   : v2track,
+            'sparsW'   : sparsW,    'lossW'   : lossW,    'nhidclassi': nhidclassi,
+            'cells'    : cells
 
-		    	 }
+                 }
 
-	#Overwrite any parameters with extra arguments
-	if argDict:
-		paramDict.update(argDict)
+    #Overwrite any parameters with extra arguments
+    if argDict:
+        paramDict.update(argDict)
 
-	# Loading data 
-	print('Loading Data      ...')
-	dPath = _mPath + 'data/' + dataset  # Dataset path
-	data  = loadmat(dPath)['FR']
+    # Loading data 
+    print('Loading Data      ...')
+    dPath = _mPath + 'data/' + dataset  # Dataset path
+    data  = loadmat(dPath)['FR']
 
-	#Running activeConn ~ Should be called seperatly 
-	graph, dataDict, Loss = activeConn(paramDict, data, run= run)
+    #Running activeConn ~ Should be called seperatly 
+    graph, dataDict, Loss = activeConn(paramDict, data, run= run)
 
-	return graph, dataDict, Loss
-
-
-
-def optoV1(argDict = None, run = True):
-	''' parameter file for simulation.
-		
-		run     : If running the simulation or not
-		argDict : Overwriting certain paramers. Has to be of type dict
-		 '''
-
-	# General Parameters ---------------------------------------------------------------
-
-	#dataset = 'kmeans0.npy'   #Dataset name
-	_mPath   = '/groups/turaga/home/castonguayp/research/activeConn/' # Main path
-	dataset  = 'optogenExp.h5'
-	#_mPath   = '/home/phabc/Main/research/janelia/turaga/Shotgun/'
-	saveName = 'opto.ckpt'
-
-	# algorithm parameters
-	batchSize = 2     
-	dispStep  = 100     
-	learnRate = 0.0001 
-	nbIters   = 10000
-	sampRate  = 0
-	v2track   = ['ng_IH_HH/MultiRNNCell/Cell0/BasicRNNCell/Linear/Matrix',
-				 'ng_Gmean', 'ng_Gstd', 'alpha_W']   
-
-	#Cost parameters
-	sparsW   = 0.000005
-	lossW    = 0.5
-
-	#Network Parameters
-	actfct   = tf.tanh    
-	model    = '__classOpto__' 
-	nInput   = 1             
-	nhidGlob = 10             
-	nhidNetw = 348             
-	nOut     = 348                  	  
-
-	nhidclassi = 5
-
-	# Data parameters
-	method   = 1
-	cells    = [217,217]
-	seqRange = [-10,20]    
-
-
-	#Graph build and execution --------------------------------------------------------
-
-	#Packing dictionnary
-
-	paramDict = {
-			'dataset'  : dataset,   '_mPath'  : _mPath,   'saveName'  : saveName, 
-			'learnRate': learnRate, 'nbIters' : nbIters,  'batchSize' : batchSize, 
-			'dispStep' : dispStep,  'model'   : model,    'actfct'    : actfct,  
-			'method'   : method,    'seqRange': seqRange, 
-			'nhidGlob' : nhidGlob,  'nhidNetw': nhidNetw, 'nInput'    : nInput,
-			'nOut'     : nOut   ,   'sampRate': sampRate, 'v2track'   : v2track,
-			'sparsW'   : sparsW,    'lossW'   : lossW,    'nhidclassi': nhidclassi,
-			'cells'    : cells
-
-		    	 }
-
-	#Overwrite any parameters with extra arguments
-	if argDict:
-		if 'seqRange1' in argDict and 'seqRange2' in argDict:
-			argDict['seqRange'] = [argDict['seqRange1'],
-			                       argDict['seqRange2']]
-		paramDict.update(argDict)
-	#Lenght of sequences
-	paramDict['seqLen'] = np.sum(np.abs(paramDict['seqRange']))
-
-	# Loading data 
-	print('Loading Data      ...')
-	dataD = loadData('optoV1', _mPath, dataset)
-
-	#Running activeConn ~ Should be called seperatly 
-	graph, dataDict, Loss = activeConn(paramDict, dataD, run= run)
-
-	return graph, dataDict, Loss
+    return graph, dataDict, Loss
 
 
 
-def loadData(mainName, mPath, dataset):
-	''' Will load the data for different
-		main file '''
+def optoV1(argDict = None, run = True, graph= None):
+    ''' parameter file for simulation.
+        
+        run     : If running the simulation or not
+        argDict : Overwriting certain paramers. Has to be of type dict
+         '''
 
-	if mainName == 'optoV1':
+    # General Parameters ---------------------------------------------------------------
 
-		dsNoList =['08','09','10'] #list of datasets to load
+    #dataset = 'kmeans0.npy'   #Dataset name
+    _mPath   = '/groups/turaga/home/castonguayp/research/activeConn/' # Main path
+    dataset  = 'optogenExp.h5'
+    #_mPath   = '/home/phabc/Main/research/janelia/turaga/Shotgun/'
+    saveName = 'opto.ckpt'
 
-		#Loading data (baseline removed)
-		dPath = mPath + 'data/' + dataset  # Dataset path
-		dat   = h5py.File(dPath)
+    # algorithm parameters
+    detail    = True
+    batchSize = 1
+    dispStep  = 100     
+    learnRate = 0.0001 
+    nbIters   = 5000
+    sampRate  = 0
+    v2track   = ['ng_IH_HH/MultiRNNCell/Cell0/BasicRNNCell/Linear/Matrix',
+                 'ng_Gmean', 'ng_Gstd', 'alpha_W']   
 
-		#Taking only elements related to dataset selected and renaming
-		dat = { key: dat[key] for No in dsNoList for key in dat if No in key}
+    #Cost parameters
+    sparsW   = 0.005
+    lossW    = 1
 
-		#Number of frames per dataset (have to be identical shape)
-		T = dat['dataset10'].shape[1]
+    #Network Parameters
+    actfct   = tf.tanh    
+    model    = '__classOpto__' 
+    nInput   = 1             
+    nhidGlob = 10             
+    nhidNetw = 348             
+    nOut     = 348                        
 
-		#Initializing data dictionnary
-		data = {'dataset':[], 'baseline':[], 'stimFrame':[],'stimIdx':[]}
+    nhidclassi = 5
 
-		frameSet= 0 #To count frame datasets
-		for key in sorted(dat):
-		    if   'base' in key:
-		        data['baseline'].append(dat[key][:])
-		    elif 'data' in key:
-		        data['dataset'].append(dat[key][:])
-		    elif 'Frame' in key:
-		        data['stimFrame'].append(dat[key][:]+T*frameSet)
-		        frameSet +=1 #Correcting for the stacking
-		    elif 'Idx' in key:
-		        data['stimIdx'].append(dat[key][:].T)
-
-		#Stacking database
-		data = {key: np.hstack(data[key]) for key in data}
-		#Transposing stimIdx
-		data['stimIdx'] = data['stimIdx'].T
+    # Data parameters
+    method   = 1
+    ctrl     = 'spont'
+    cells    = [217,217]
+    seqRange = [-10,20]    
 
 
-	return data
+    #Graph build and execution --------------------------------------------------------
+
+    #Packing dictionnary
+
+    paramDict = {
+            'dataset'  : dataset,   '_mPath'  : _mPath,   'saveName'  : saveName, 
+            'learnRate': learnRate, 'nbIters' : nbIters,  'batchSize' : batchSize, 
+            'dispStep' : dispStep,  'model'   : model,    'actfct'    : actfct,  
+            'method'   : method,    'seqRange': seqRange, 
+            'nhidGlob' : nhidGlob ,  'nhidNetw': nhidNetw, 'nInput'    : nInput,
+            'nOut'     : nOut   ,   'sampRate': sampRate, 'v2track'   : v2track,
+            'sparsW'   : sparsW,    'lossW'   : lossW,    'nhidclassi': nhidclassi,
+            'cells'    : cells,     'ctrl'    : ctrl,     'detail'    : detail,
+
+                 }
+
+    #Overwrite any parameters with extra arguments
+    if argDict:
+        if 'seqRange1' in argDict and 'seqRange2' in argDict:
+            argDict['seqRange'] = [argDict['seqRange1'],
+                                   argDict['seqRange2']]
+        paramDict.update(argDict)
+    #Lenght of sequences
+    paramDict['seqLen'] = np.sum(np.abs(paramDict['seqRange']))
+
+    # Loading data 
+    #print('Loading Data      ...')
+    dataD = loadDataRand('optoV1', _mPath, dataset)
+    dataD.update(loadDataSpont('optoV1', _mPath, dataset))
+
+    graph, dataDict, Loss = activeConn(paramDict, dataD, run= run, graph = graph)
+
+    return graph, dataDict, Loss
+
+
+
+def loadDataRand(mainName, mPath, dataset):
+    ''' Will load the data for different
+        main file of random stim condition'''
+
+    if mainName == 'optoV1':
+
+        dsNoList =['08','09','10'] #list of datasets to load
+
+        #Loading data (baseline removed)
+        dPath = mPath + 'data/' + dataset  # Dataset path
+        dat   = h5py.File(dPath)
+
+        #Taking only elements related to dataset selected and renaming
+        dat = { key: dat[key] for No in dsNoList for key in dat if No in key}
+
+        #Number of frames per dataset (have to be identical shape)
+        T = dat['dataset10'].shape[1]
+
+        #Initializing data dictionnary
+        data = {'dataset':[], 'baseline':[], 'stimFrame':[],'stimIdx':[]}
+
+        frameSet= 0 #To count frame datasets
+        for key in sorted(dat):
+            if   'base' in key:
+                data['baseline'].append(dat[key][:])
+            elif 'data' in key:
+                data['dataset'].append(dat[key][:])
+            elif 'Frame' in key:
+                data['stimFrame'].append(dat[key][:]+T*frameSet)
+                frameSet +=1 #Correcting for the stacking
+            elif 'Idx' in key:
+                data['stimIdx'].append(dat[key][:].T)
+
+        #Stacking database
+        data = {key: np.hstack(data[key]) for key in data}
+        #Transposing stimIdx
+        data['stimIdx'] = data['stimIdx'].T
+
+
+    return data
+
+
+def loadDataSpont(mainName, mPath, dataset):
+    ''' Will load the data for different
+        main file '''
+
+    if mainName == 'optoV1':
+
+        dsNoList =['07'] #list of datasets to load
+
+        #Loading data (baseline removed)
+        dPath = mPath + 'data/' + dataset  # Dataset path
+        dat   = h5py.File(dPath)
+
+        #Taking only elements related to dataset selected and renaming
+        dat = { key: dat[key] for No in dsNoList for key in dat if No in key}
+
+        #Number of frames per dataset (have to be identical shape)
+
+        #Initializing data dictionnary
+        data = {'datasetSpont':[], 'baselineSpont':[] }
+
+        frameSet= 0 #To count frame datasets
+        for key in sorted(dat):
+            if   'base' in key:
+                data['baselineSpont'].append(dat[key][:])
+            elif 'data' in key:
+                data['datasetSpont'].append(dat[key][:])
+
+        #Stacking database
+        data = {key: np.hstack(data[key]) for key in data}
+
+    return data
