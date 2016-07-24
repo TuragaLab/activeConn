@@ -13,7 +13,7 @@ from activeConn.tools  import *
 import tensorflow as tf
 
 
-def activeConn(paramDict, data, run = True):
+def activeConn(paramDict, data, run = True, graph= None):
     '''
     Bayesian RNN for Active Connectomics Learning
            
@@ -38,7 +38,7 @@ def activeConn(paramDict, data, run = True):
     pDict = {
                'dataset':'FR_RNN.mat', '_mPath': expanduser("~") + '/.activeConn/',
                'saveName': 'ckpt.ckpt', 'learnRate': 0.0001, 'nbIters':10000,
-               'batchSize': 50, 'dispStep':200, 'model': '__NGCmodel__',
+               'batchSize': 50, 'dispStep':200, 'model': '__NGCmodel__', 'detail':True,
                'actfct':tf.tanh,'method':1, 'YDist':1 , 'sampRate':0             
              }       
 
@@ -57,6 +57,7 @@ def activeConn(paramDict, data, run = True):
             pDict['nInput']    = 1
             pDict['batchSize'] = 1
             dataDict = dataPrepClassi( data,
+                                       ctrl     = pDict['ctrl'],
                                        cells    = pDict['cells'],
                                        seqRange = pDict['seqRange'], 
                                        method   = pDict['method']  )
@@ -84,13 +85,14 @@ def activeConn(paramDict, data, run = True):
                             ' need to be equal.')
 
     #Build graph
-    print('Building Graph    ...')
-    graph = actConnGraph(pDict)
+    #print('Building Graph    ...')
+    if not graph:
+      graph = actConnGraph(pDict)
 
     #Launch Graph
     if run:
-        print('Launching Session ...')
-        Loss = graph.launchGraph( dataDict, savepath = savepath )
+        #print('Launching Session ...')
+        Loss = graph.launchGraph( dataDict, detail = pDict['detail'], savepath = savepath )
     else:
         Loss = None
 
