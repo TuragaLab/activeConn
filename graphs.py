@@ -741,7 +741,7 @@ class actConnGraph(object):
                        Loss = Loss + teFit/50
 
                     self.lossTr[stepTr] = sess.run(self._ngml, feed_dict = FD_tr)
-                    self.grad[stepTr]   = sess.run(self._grad, feed_dict= FD_tr)
+                    self.grad[stepTr]   = sess.run(self._grad, feed_dict = FD_tr)
 
                                     #Tracking variables in v2track
                     if self.sampRate > 0 and not stepTr%self.sampRate:
@@ -750,8 +750,6 @@ class actConnGraph(object):
 
                 elif stepTr >= self.nbIters-500:
                     if 'class' in self.model:
-                           if accNum == 500:
-                                accNum = 0
                            cla, _y = sess.run(self._resp, feed_dict =FD_te)
 
                            ans[accNum,:]  = np.squeeze(cla)
@@ -760,7 +758,7 @@ class actConnGraph(object):
 
                 if detail and stepTr % self.dispStep == 0:
 
-                    #trSpars = sess.run(self._sparsC, feed_dict = FD_tr)
+                    trSpars = sess.run(self._sparsC, feed_dict = FD_tr)
 
                     #Testing fit with new data
                     teFit = sess.run(self._ngml, feed_dict = FD_te) 
@@ -776,18 +774,20 @@ class actConnGraph(object):
                     print( "Iter: " + str(stepTr) + "/" + str(self.nbIters)           +  
                            "   ~  L2 Loss: "   + "{:.6f}".format(self.lossTr[stepTr]) +
                            "   ~  Accuracy: "  + "{:.2f}".format(acc*100)             + 
-                           "   |  Test fit: "  + "{:.6f}".format(teFit)    )
-
+                           "   |  Test fit: "  + "{:.6f}".format(teFit)               +
+                           "   ~  Spars: "     + "{:.6f}".format(trSpars)     )
+ 
                 #Running backprop
                 sess.run(self.optimizer, FD_tr)
 
                 #Applying masks
                 #sess.run(self.masking)
 
-                stepTr += 1
+                stepTr  += 1
                 stepBat += 1
 
             self.finalAcc = (np.sum(ans))/(500*self.batchSize*2)
+            #print(self.finalAcc)
 
             #Saving variables
             self.saver.save(sess, savepath)
@@ -796,7 +796,7 @@ class actConnGraph(object):
             #Saving variables final state
             self.evalVars = {v.name: v.eval() for v in tf.trainable_variables()}
 
-            #print('Final accuracy : {:.2f}'.format(self.finalAcc*100))
+            print('Final accuracy : {:.2f}'.format(self.finalAcc*100))
            # print('\nTotal time:  ' + str(datetime.timedelta(seconds = time.time()-t)))
             
         return Loss
@@ -805,7 +805,7 @@ class actConnGraph(object):
         out  = tf.nn.sigmoid(self._Z2)
         #Whether answer is right
         _Y = tf.round(out)
-        Y  = self._Y# tf.constant([0,1], dtype = "int64")
+        Y  = self._Y # tf.constant([0,1], dtype = "int64")
 
         resp = tf.equal(Y,_Y) 
         return resp, _Y
@@ -815,7 +815,7 @@ class actConnGraph(object):
         FD ={ self._X : np.vstack([ D[0][idxS[:, stepTr],:],
                                     D[1][idxNS[:,stepTr],:] ]), 
               self._Y : np.vstack([ [1]*self.batchSize,
-                                    [0]*self.batchSize ]),
+                                     [0]*self.batchSize ]),
               self._batch : stepTr  }
 
         return FD

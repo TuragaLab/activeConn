@@ -377,7 +377,7 @@ def cellRespMulti(data, stimFrames, stimOrder, nf = 30, nfb = 1):
 
 
  
-def dataPrepClassi(dataDict, ctrl= 'spont', cells= [217,217], seqRange= [-10,20], method = 1): 
+def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,1],[0,1]], method = 1):
 
 
     ''' Putting the data in the right format for training for 
@@ -391,8 +391,10 @@ def dataPrepClassi(dataDict, ctrl= 'spont', cells= [217,217], seqRange= [-10,20]
         cells[0] : Cell to predict if was stimulated
         cells[1] : Cell to use for predicting if cells[0] was stimulated
 
-        seqRange[0] : Nb of time point before stimulation to consider
-        seqRange[1] : Nb of time point after  stimulation to consider
+        seqRange[0] : Range of time points before stimulation to consider ( [t-u, t-v[ )
+        seqRange[1] : Range of time points after  stimulation to consider ( [t+x, t+y[ )
+
+        NEED TO ADJUST THE SPONT STIM BECAUSE OF SEQUENCE BREAKING CAUSED BY NEW SEQRANGE
 
         method : 0 = No transformation
                  1 = standardization
@@ -428,7 +430,8 @@ def dataPrepClassi(dataDict, ctrl= 'spont', cells= [217,217], seqRange= [-10,20]
 
     nS = len(F)     #Number of stimulations
     nN = D.shape[0] #Number of units
-    sL = np.sum(np.abs(seqRange)) #Sequence lenght
+    sL = seqRange[0][1]-seqRange[0][0]+\
+         seqRange[1][1]-seqRange[1][0] #Sequence lenght
 
     #Preprocessing data (stand or normalization)
     D =  preProcess(D,  method = method, base = B)
@@ -442,9 +445,10 @@ def dataPrepClassi(dataDict, ctrl= 'spont', cells= [217,217], seqRange= [-10,20]
     label = np.zeros(nS)
 
     for s in range(nS):
-        Dstim[:,s,:] = D[ F[s] + seqRange[0]: 
-                          F[s] + seqRange[1], : ]
-
+        Dstim[:,s,:] = np.vstack([
+                       D[ F[s] + seqRange[0][0]: F[s] + seqRange[0][1] ],
+                       D[ F[s] + seqRange[1][0]: F[s] + seqRange[1][1] ]  ])
+            
         #cells[0] cell label
         if cells[0] in I[s]:
             label[s] = 1
@@ -452,6 +456,9 @@ def dataPrepClassi(dataDict, ctrl= 'spont', cells= [217,217], seqRange= [-10,20]
             label[s] = 0
 
     Dstim  = np.float32(Dstim) #For tensorflow
+
+    #perm  = np.random.permutation(len(label))
+    #label = label[perm]
 
     #Label counts
     labIdx1 = np.where(label == 1)[0] #Idx of cells[0] stimulation
@@ -461,48 +468,58 @@ def dataPrepClassi(dataDict, ctrl= 'spont', cells= [217,217], seqRange= [-10,20]
     n0 = len(labIdx0) #Number of non-cells[0] stimulation
 
     #Number of trianing examples
-    nTrainS  = int(n1*4/5)
-    nTrainNS = int(n0*4/5)
+    nTrain1 = int(n1*4/5)
+    nTrain0 = int(n0*4/5)
+
+
+    #Random permutations of sequences
+    perms1 = np.random.permutation(n1) #Idx for stimulation
+    perms0 = np.random.permutation(n0) #Idx for noStim
+
+    trainIdx1 = perms1[:nTrain1]
+    trainIdx0 = perms0[:nTrain0]
+
+    testIdx1 = perms1[nTrain1:]
+    testIdx0 = perms0[nTrain0:]
 
     if ctrl == 'spont':
         #Will use spontaneous activity for no-stim label data
-        
         #print('Using spontaneous data for label 0.\n')
 
         #Training inputs
-        spontIdxTr = np.random.randint(0,np.shape(DS)[0]-sL,nTrainNS)
+        spontIdxTr = np.random.randint(0,np.shape(DS)[0]-sL,nTrain0)
         SPTr = np.dstack([DS[idx:idx+sL,:] for idx 
                           in spontIdxTr]).transpose(0,2,1)
 
         #Stacking both label sequences [ Stim, noStim(spont) ]
-        trInput = [ Dstim[:,labIdx1[:nTrainS],:], SPTr ]
-        
+        trInput = [ Dstim[:,labIdx1[trainIdx1],:], SPTr ]
+
         #Testing input
-        spontIdxTe = np.random.randint(0,np.shape(DS)[0]-sL,n0-nTrainNS)
+        spontIdxTe = np.random.randint(0,np.shape(DS)[0]-sL,n0-nTrain0)
         SPTe = np.dstack([DS[idx:idx+sL,:] for idx 
                           in spontIdxTe]).transpose(0,2,1)
-        
+
         #Stacking both label sequences [ Stim, noStim(spont) ]
-        teInput = [ Dstim[:,labIdx1[nTrainS:],:], SPTe ]
-        
-        
+        teInput = [ Dstim[:,labIdx1[testIdx1],:], SPTe ]
+
+
     elif ctrl == 'noStim':
         #Training set
         #print('Using random data for label 0.\n')
-        trInput = [ Dstim[:,labIdx1[:nTrainS],  :],  #Stim data
-                    Dstim[:,labIdx0[:nTrainNS], :] ] #No stim data
-        
+        trInput = [ Dstim[:,labIdx1[trainIdx1],  :],  #Stim data
+                    Dstim[:,labIdx0[trainIdx0], :] ] #No stim data
+
         #Testing set
-        teInput  = [ Dstim[:,labIdx1[nTrainS:],  :],
-                     Dstim[:,labIdx0[nTrainNS:], :] ]
+        teInput  = [ Dstim[:,labIdx1[testIdx1],  :],
+                     Dstim[:,labIdx0[testIdx0], :] ]
 
     #Taking  only decoding cell
     trInput = [ lab[:,:,cells[1]].T for lab in trInput ] 
     teInput = [ lab[:,:,cells[1]].T for lab in teInput ]
 
     #Stacking label (stim, nostim)
-    trLabel = [ label[labIdx1[:nTrainS]], label[labIdx0[:nTrainNS]] ]
-    teLabel = [ label[labIdx1[nTrainS:]], label[labIdx0[nTrainNS:]] ]
+    trLabel = [ label[labIdx1[trainIdx1]], label[labIdx0[trainIdx0]] ]
+    teLabel = [ label[labIdx1[testIdx1]],  label[labIdx0[testIdx0]]  ]
 
     print( 'Stimulated cell : {}\n'.format(cells[0]) +
            'Decoding cell   : {}\n'.format(cells[1]) )
