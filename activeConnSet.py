@@ -55,7 +55,7 @@ def activeConn(paramDict, data, run = True, graph= None):
     if type(data) is dict:
         if 'class' in pDict['model']:
             pDict['nInput']    = 1
-            pDict['batchSize'] = 1
+            pDict['batchSize'] = pDict['batchSize']*2
             dataDict = dataPrepClassi( data,
                                        ctrl     = pDict['ctrl'],
                                        cells    = pDict['cells'],
