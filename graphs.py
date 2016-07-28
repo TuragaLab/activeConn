@@ -42,23 +42,47 @@ from tensorflow.python.ops.constant_op import constant  as const
                       inputstep with calcium decay.
 
 
+
     _________________________________________________________________________
 
                                       FUNCTIONS
     _________________________________________________________________________
 
 
-
-    _masking : Adding masks in the tensorflow graph that will 
+    _masking    : Adding masks in the tensorflow graph that will 
                   be applied to the designed weights after every
                   variables update.
     
-    _VNoise  : Adding stochasticity in all the tensorflow graph 
+    _VNoise     : Adding stochasticity in all the tensorflow graph 
                   variables after every update for a stotastic 
                   gradient descent. 
-      
-df more
-     easily. df asdf sadf asdf
+    
+    launchGraph : Will lauch the training of the model.
+    showVars    : Will plot the variables with imshow (matrices)
+                  and plot (vectors)
+    plotfit     : Will plot the test set and the prediction of 
+                  the model.
+
+    _________________________________________________________________________
+
+                                       MASKING
+    _________________________________________________________________________
+
+
+    Masks are used to modulate the parameter space that can be
+    explored by the model. They are applied after every variable
+    update.
+     The first character of a mask has a meaning :
+    
+                       0 : Mask replace the respective weight
+                       1 : Mask is multipled with the respective weight
+                       2 : Mask is added to the respective weight
+    
+     Mask operations will be executed in the same order
+     '_M' should be added at the end of the name if the name in the weights 
+     dictionnary would be identical otherwise. '_W' can be added to the 
+     corresponding name variable instead of '_M' to distinguish them more
+     easily.
 
      ________________________________________________________________________
 
@@ -119,7 +143,7 @@ class actConnGraph(object):
             LR = tf.train.exponential_decay(self.learnRate, #LR intial value
                                             self._batch,         #Current batch
                                             200,                 #Decay step
-                                            0.95,                #Decay rate
+                                            0.90,                #Decay rate
                                             staircase = True)
             
             #Prediction using models
@@ -192,16 +216,32 @@ class actConnGraph(object):
 
 
         classiCell = rnn_cell.BasicLSTMCell(self.nhidclassi)
+        #classiCell = rnn_cell.BasicRNNCell(self.nhidclassi, activation = self.actfct)
+        #classiCell = rnn_cell.GRUCell(self.nhidclassi, activation = self.actfct)
 
         #INITIAL STATE DOES NOT WORK
-        initClassi = tf.zeros([self.batchSize,classiCell.state_size], dtype='float32') 
+        #initClassi = tf.zeros([self.batchSize,classiCell.state_size], dtype='float32') 
 
-        #classi
-        O, S = rnn.rnn(classiCell, _Z1, dtype = tf.float32) #Output and state
+        if self.multiLayer:
+            #Stacking classifier cells
+            stackCell = rnn_cell.MultiRNNCell([classiCell] * self.multiLayer)
+            S = stackCell.zero_state(self.batchSize, tf.float32)
+            with tf.variable_scope("") as scope:
+                for i in range(self.seqLen):
+                    if i == 1:
+                        scope.reuse_variables()
+                    O,S = stackCell(_Z1[i],S)
 
-        #classi to output layer
-        predCell = tf.matmul(O[-1],self.weights['classi_HO_W'])  + \
-                   self.biases['classi_HO_B']
+            predCell = tf.matmul(O, self.weights['classi_HO_W'])  + \
+                       self.biases['classi_HO_B']
+
+        else:
+            #classi
+            O, S = rnn.rnn(classiCell, _Z1, dtype = tf.float32) #Output and state
+
+            #classi to output layer
+            predCell = tf.matmul(O[-1], self.weights['classi_HO_W'])  + \
+                       self.biases['classi_HO_B']
 
         return predCell
 
@@ -525,18 +565,22 @@ class actConnGraph(object):
              #If model is a classifier
 
             #Sparsity regularizer
-            sparsC = [tf.reduce_sum(tf.abs(v)) for v in self.variables]
-            self._sparsC = tf.add_n(sparsC)
+            #L2 loss
+            self._sparsC = tf.add_n([tf.nn.l2_loss(v) for v in self.variables]) 
+
+            #L1 loss
+            #self._sparsC = tf.add_n([tf.reduce_sum(tf.abs(v)) for v in self.variables])
+
             #self._sparsC = tf.zeros(1)
 
             #Cross entropy
             ngml = tf.nn.sigmoid_cross_entropy_with_logits(self._Z2, self._Y)
             self._ngml = tf.reduce_sum(ngml)
 
-            #cost = (self._ngml*self.lossW +self._sparsC*self.sparsW) / \
-            #      (2*self.batchSize)
+            cost = (self._ngml*self.lossW +self._sparsC*self.sparsW) / \
+                   (2*self.batchSize)
 
-            cost = (self._ngml*self.lossW) / (2*self.batchSize)
+            #cost = (self._ngml*self.lossW) / (2*self.batchSize)
                    
           else:
 
@@ -674,11 +718,16 @@ class actConnGraph(object):
         backupPath = '/tmp/backup.ckpt' # Checkpoint backup path
 
         #Which sequence for classification mini batches
+
         if 'class' in self.model:
-            trSidx  = randint(0,len(D['Ytr'][0]),[self.batchSize,self.nbIters])
-            trNSidx = randint(0,len(D['Ytr'][1]),[self.batchSize,self.nbIters])
-            teSidx  = randint(0,len(D['Yte'][0]),[self.batchSize,self.nbIters])
-            teNSidx = randint(0,len(D['Yte'][1]),[self.batchSize,self.nbIters])
+            trSidx  = randint( 0, len( D['Ytr'][0] ),
+                              [int(self.batchSize/2), self.nbIters] )
+            trNSidx = randint( 0, len( D['Ytr'][1] ),
+                              [int(self.batchSize/2), self.nbIters] )
+            teSidx  = randint( 0, len( D['Yte'][0] ),
+                              [int(self.batchSize/2), self.nbIters] )
+            teNSidx = randint( 0, len( D['Yte'][1] ),
+                              [int(self.batchSize/2), self.nbIters] )
 
 
         #Unpacking data
@@ -701,7 +750,8 @@ class actConnGraph(object):
             self.lossTr = [None]*self.nbIters
             self.lossTe = []
 
-        ans = np.round(np.random.rand(500,2))
+        ansTr = np.round(np.random.rand(500,2))
+        ansTe = np.round(np.random.rand(500,2))
         self.acc = []
 
 
@@ -732,13 +782,17 @@ class actConnGraph(object):
                     if 'class' in self.model:
                            if accNum == 500:
                                 accNum = 0
-                           cla, _y = sess.run(self._resp, feed_dict =FD_te)
+                           claTe, _y = sess.run(self._resp, feed_dict = FD_te)
                            self.pred[stepTr] = [_y,[1,0]]
-                           ans[accNum,:] = np.squeeze(cla)
+                           ansTe[accNum,:] = np.squeeze(claTe)
+
+                           claTr, _ = sess.run(self._resp, feed_dict = FD_tr)
+                           ansTr[accNum,:] = np.squeeze(claTr)
+
                            accNum += 1
 
-                    if stepTr >= self.nbIters-50:
-                       Loss = Loss + teFit/50
+                    if stepTr >= self.nbIters-500:
+                       Loss = Loss + lossTe/500
 
                     self.lossTr[stepTr] = sess.run(self._ngml, feed_dict = FD_tr)
                     self.grad[stepTr]   = sess.run(self._grad, feed_dict = FD_tr)
@@ -752,30 +806,31 @@ class actConnGraph(object):
                     if 'class' in self.model:
                            cla, _y = sess.run(self._resp, feed_dict =FD_te)
 
-                           ans[accNum,:]  = np.squeeze(cla)
+                           ansTe[accNum,:]  = np.squeeze(cla)
                            accNum += 1
 
 
                 if detail and stepTr % self.dispStep == 0:
 
-                    trSpars = sess.run(self._sparsC, feed_dict = FD_tr)
+                    #trSpars = sess.run(self._sparsC, feed_dict = FD_tr)
 
                     #Testing fit with new data
-                    teFit = sess.run(self._ngml, feed_dict = FD_te) 
-
-                    self.lossTe.append(teFit) 
+                    lossTe = sess.run(self._ngml, feed_dict = FD_te) 
+                    self.lossTe.append(lossTe) 
 
                     #Calculating accuraty for classification
                     if 'class' in self.model:
-                           acc = (np.sum(ans))/(500*self.batchSize*2)
-                           self.acc.append(acc)
+                           accTe = (np.sum(ansTe))/(500*self.batchSize)
+                           self.acc.append(accTe)
+
+                           accTr = (np.sum(ansTr))/(500*self.batchSize)
 
                     #Printing progress 
-                    print( "Iter: " + str(stepTr) + "/" + str(self.nbIters)           +  
-                           "   ~  L2 Loss: "   + "{:.6f}".format(self.lossTr[stepTr]) +
-                           "   ~  Accuracy: "  + "{:.2f}".format(acc*100)             + 
-                           "   |  Test fit: "  + "{:.6f}".format(teFit)               +
-                           "   ~  Spars: "     + "{:.6f}".format(trSpars)     )
+                    print( " Iter: " + str(stepTr) + "/" + str(self.nbIters)         +  
+                           "   ~  Tr Loss: " + "{:.6f}".format(self.lossTr[stepTr])  +
+                           "   ~  Tr Acc: "  + "{:.2f}".format(accTr*100)            + 
+                           "   |  Te Loss: " + "{:.6f}".format(lossTe)               +
+                           "   ~  Te Acc "   + "{:.2f}".format(accTe*100)     )
  
                 #Running backprop
                 sess.run(self.optimizer, FD_tr)
@@ -786,18 +841,19 @@ class actConnGraph(object):
                 stepTr  += 1
                 stepBat += 1
 
-            self.finalAcc = (np.sum(ans))/(500*self.batchSize*2)
+            self.finalAcc = (np.sum(ansTe))/(500*self.batchSize)
             #print(self.finalAcc)
 
             #Saving variables
-            self.saver.save(sess, savepath)
-            self.saver.save(sess, backupPath)
-            
-            #Saving variables final state
-            self.evalVars = {v.name: v.eval() for v in tf.trainable_variables()}
+            if detail:
+                self.saver.save(sess, savepath)
+                self.saver.save(sess, backupPath)
+                
+                #Saving variables final state
+                self.evalVars = {v.name: v.eval() for v in tf.trainable_variables()}
 
-            print('Final accuracy : {:.2f}'.format(self.finalAcc*100))
-           # print('\nTotal time:  ' + str(datetime.timedelta(seconds = time.time()-t)))
+                print('Final accuracy : {:.2f}'.format(self.finalAcc*100))
+                print('\nTotal time:  ' + str(datetime.timedelta(seconds = time.time()-t)))
             
         return Loss
 
@@ -814,8 +870,8 @@ class actConnGraph(object):
 
         FD ={ self._X : np.vstack([ D[0][idxS[:, stepTr],:],
                                     D[1][idxNS[:,stepTr],:] ]), 
-              self._Y : np.vstack([ [1]*self.batchSize,
-                                     [0]*self.batchSize ]),
+              self._Y : np.vstack([ [1] * int(self.batchSize/2),
+                                    [0] * int(self.batchSize/2) ]),
               self._batch : stepTr  }
 
         return FD
