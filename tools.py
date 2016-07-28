@@ -170,14 +170,14 @@ def calcResponseMulti(data, stimFrames, stimOrder, nf = 12, nfb = 1):
         nNeur = stimOrder.shape[1] #number of stimulated neurons at same time
 
         #Replicating frames 
-        stimFrames = np.tile(stimFrames,[nNeur,1])
+        stimFrames = np.tile(stimFrames,[1,nNeur]).T
         stimFrames = sorted(stimFrames)
         stimFrames = [int(idx[0])for idx in stimFrames]
 
         nStim = len(stimFrames) #Number of stimulations
         
         # Putting all neurons stimulatead in a single array
-        stimOrder = np.hstack(stimOrder.T)
+        stimOrder = np.hstack(stimOrder)
         
         # List of stimuli
         listStim = np.vstack([np.arange(nStim),stimOrder])
@@ -193,6 +193,8 @@ def calcResponseMulti(data, stimFrames, stimOrder, nf = 12, nfb = 1):
         nReps     = nStim/nStimCell            # Number of time each cell is stimulated
 
         #Duplicated for repeating stim cycle
+        print(np.arange(nStim).shape)
+        print(np.tile(stimOrder, [1,2])[0].shape)
         listStim  = np.vstack([np.arange(nStim),np.tile(stimOrder, [1,2])[0]]) 
 
 
@@ -218,8 +220,8 @@ def calcResponseMulti(data, stimFrames, stimOrder, nf = 12, nfb = 1):
 
         if idx == 0: 
             allS = data[:, frame-nfb:frame+nf]
-        else:
-            allS = np.vstack([allS,data[:, frame-nfb:frame+nf]])
+        #else:
+        #    allS = np.vstack([allS,data[:, frame-nfb:frame+nf]])
         
         #Index of cells for control except currently stimulated
         mask = np.hstack([cellList!=cell,np.array([False]*(N-nStimCell))])
@@ -377,7 +379,7 @@ def cellRespMulti(data, stimFrames, stimOrder, nf = 30, nfb = 1):
 
 
  
-def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,1],[0,1]], method = 1):
+def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,-1],[0,1]], method = 1):
 
 
     ''' Putting the data in the right format for training for 
@@ -419,6 +421,9 @@ def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,1]
     ________________________________________________________________________
 
     '''
+
+    cells[1] = cells[1] - 1  #Correction for index in python
+
     F  = dataDict['stimFrame'] #Frame of stimulation
     I  = dataDict['stimIdx']   #Index of neuron stimulated
     B  = dataDict['baseline']
@@ -434,8 +439,8 @@ def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,1]
          seqRange[1][1]-seqRange[1][0] #Sequence lenght
 
     #Preprocessing data (stand or normalization)
-    D =  preProcess(D,  method = method, base = B)
-    DS = preProcess(DS, method = method, base = BS)
+    #D =  preProcess(D,  method = method, base = B)
+    #DS = preProcess(DS, method = method, base = BS)
 
     D = D.T ; DS = DS.T #Transposing for final shape
 
@@ -455,10 +460,24 @@ def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,1]
         else:
             label[s] = 0
 
+    Dstim = np.zeros([sL,nS,nN])
+    label = np.zeros(nS)
+
+    for s in range(nS):
+        Dstim[:,s,:] = np.vstack([
+                       D[ F[s] + seqRange[0][0]: F[s] + seqRange[0][1] ],
+                       D[ F[s] + seqRange[1][0]: F[s] + seqRange[1][1] ]  ])
+            
+        #cells[0] cell label
+        if cells[0] in I[s]:
+            label[s] = 1
+        else:
+            label[s] = 0
+
     Dstim  = np.float32(Dstim) #For tensorflow
 
-    #perm  = np.random.permutation(len(label))
-    #label = label[perm]
+    perm  = np.random.permutation(len(label))
+    label = label[perm]
 
     #Label counts
     labIdx1 = np.where(label == 1)[0] #Idx of cells[0] stimulation
@@ -517,12 +536,15 @@ def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,1]
     trInput = [ lab[:,:,cells[1]].T for lab in trInput ] 
     teInput = [ lab[:,:,cells[1]].T for lab in teInput ]
 
+    trInput = [preProcess(lab,  method = method) for lab in trInput]
+    teInput = [preProcess(lab,  method = method) for lab in teInput]
+
     #Stacking label (stim, nostim)
     trLabel = [ label[labIdx1[trainIdx1]], label[labIdx0[trainIdx0]] ]
     teLabel = [ label[labIdx1[testIdx1]],  label[labIdx0[testIdx0]]  ]
 
-    print( 'Stimulated cell : {}\n'.format(cells[0]) +
-           'Decoding cell   : {}\n'.format(cells[1]) )
+    print( 'Stimulated cell : {}\n'.format(cells[0])  +
+           'Decoding cell   : {}\n'.format(cells[1]+1)  )
 
     # One hot  
     # teOutput =  np.zeros([len(teLabel),2])
@@ -793,7 +815,7 @@ def preProcess(D, method = 1, base = None):
     elif method == 5:
         #Delta f over F 
         D = D/base
-        D = preProcess(D, method = 1, base = None)
+        #D = preProcess(D, method = 1, base = None)
 
     return D
 
