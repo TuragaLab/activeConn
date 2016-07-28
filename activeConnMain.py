@@ -180,7 +180,7 @@ def optoV1(argDict = None, run = True, graph= None):
                  'ng_Gmean', 'ng_Gstd', 'alpha_W']   
 
     #Cost parameters
-    sparsW   = 0.005
+    sparsW   = .1
     lossW    = 1
 
     #Network Parameters
@@ -191,13 +191,14 @@ def optoV1(argDict = None, run = True, graph= None):
     nhidNetw = 348             
     nOut     = 348                        
 
-    nhidclassi = 5
+    nhidclassi = 30
 
     # Data parameters
     method   = 1
-    ctrl     = 'spont'
+    ctrl     = 'noStim'
     cells    = [217,217]
-    seqRange = [-10,20]    
+    seqRange = [[-5,-2],[2,5]]
+    multiLayer = None    
 
 
     #Graph build and execution --------------------------------------------------------
@@ -208,8 +209,8 @@ def optoV1(argDict = None, run = True, graph= None):
             'dataset'  : dataset,   '_mPath'  : _mPath,   'saveName'  : saveName, 
             'learnRate': learnRate, 'nbIters' : nbIters,  'batchSize' : batchSize, 
             'dispStep' : dispStep,  'model'   : model,    'actfct'    : actfct,  
-            'method'   : method,    'seqRange': seqRange, 
-            'nhidGlob' : nhidGlob ,  'nhidNetw': nhidNetw, 'nInput'    : nInput,
+            'method'   : method,    'seqRange': seqRange, 'multiLayer': multiLayer,
+            'nhidGlob' : nhidGlob ,  'nhidNetw': nhidNetw, 'nInput'   : nInput,
             'nOut'     : nOut   ,   'sampRate': sampRate, 'v2track'   : v2track,
             'sparsW'   : sparsW,    'lossW'   : lossW,    'nhidclassi': nhidclassi,
             'cells'    : cells,     'ctrl'    : ctrl,     'detail'    : detail,
@@ -218,19 +219,17 @@ def optoV1(argDict = None, run = True, graph= None):
 
     #Overwrite any parameters with extra arguments
     if argDict:
-        if 'seqRange1' in argDict and 'seqRange2' in argDict:
-            argDict['seqRange'] = [argDict['seqRange1'],
-                                   argDict['seqRange2']]
         paramDict.update(argDict)
     #Lenght of sequences
-    paramDict['seqLen'] = np.sum(np.abs(paramDict['seqRange']))
+    paramDict['seqLen'] = paramDict['seqRange'][0][1] - paramDict['seqRange'][0][0] + \
+                          paramDict['seqRange'][1][1] - paramDict['seqRange'][1][0] 
 
     # Loading data 
     #print('Loading Data      ...')
     dataD = loadDataRand('optoV1', _mPath, dataset)
     dataD.update(loadDataSpont('optoV1', _mPath, dataset))
 
-    graph, dataDict, Loss = activeConn(paramDict, dataD, run= run, graph = graph)
+    graph, dataDict, Loss = activeConn(paramDict, dataD, run= run, graph= graph)
 
     return graph, dataDict, Loss
 
