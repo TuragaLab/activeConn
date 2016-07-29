@@ -134,10 +134,16 @@ class actConnGraph(object):
                 self._X = tf.placeholder("float32", [None, self.seqLen, self.nInput], 
                                          name = 'X') 
                         
-            self._batch = tf.placeholder("int32", [], name = 'batch')                                               
+            self._batch     = tf.placeholder("int32", [], name = 'batch')
+            self._batchSize = tf.placeholder("int32",[], name = 'batchSize')                                               
 
             #Shape data
-            _Z1 = shapeData(self._X, self.seqLen, self.nInput)
+            if 'RNN' in self.model: 
+              _Z1 = shapeData(self._X, self.seqLen, self.nInput)
+              #Prediction using models
+              self._Z2 = model(_Z1)
+            else:
+              self._Z2 = model(self._X)
 
             #Learning rate decay 
             LR = tf.train.exponential_decay(self.learnRate, #LR intial value
@@ -146,8 +152,7 @@ class actConnGraph(object):
                                             0.90,                #Decay rate
                                             staircase = True)
             
-            #Prediction using models
-            self._Z2 = model(_Z1)
+
 
             #List of all variables 
             self.variables = tf.trainable_variables() 		
@@ -192,7 +197,7 @@ class actConnGraph(object):
      
     '''
 
-    def __classOpto__(self,_Z1):
+    def __classOptoRNN__(self,_Z1):
 
         ''' Reccurent neural network with a classifer (logistic) as output layer
             that tries to predicted if there was an otpogenetic stimulation in 
@@ -206,7 +211,7 @@ class actConnGraph(object):
                 #Defining weights
         self.weights = { 
                          'classi_HO_W' : varInit([self.nhidclassi,1],
-                                                  'classi_HO_W', std = 0.1 )
+                                                  'classi_HO_W', std = 0.01 )
                         }
 
         self.biases  = { 'classi_HO_B': varInit([1], 'classi_HO_B',
@@ -215,8 +220,8 @@ class actConnGraph(object):
         self.masks   = { }
 
 
-        classiCell = rnn_cell.BasicLSTMCell(self.nhidclassi)
-        #classiCell = rnn_cell.BasicRNNCell(self.nhidclassi, activation = self.actfct)
+        #classiCell = rnn_cell.BasicLSTMCell(self.nhidclassi)
+        classiCell = rnn_cell.BasicRNNCell(self.nhidclassi, activation = self.actfct)
         #classiCell = rnn_cell.GRUCell(self.nhidclassi, activation = self.actfct)
 
         #INITIAL STATE DOES NOT WORK
@@ -225,12 +230,12 @@ class actConnGraph(object):
         if self.multiLayer:
             #Stacking classifier cells
             stackCell = rnn_cell.MultiRNNCell([classiCell] * self.multiLayer)
-            S = stackCell.zero_state(self.batchSize, tf.float32)
+            S = stackCell.zero_state(self._batchSize, tf.float32)
             with tf.variable_scope("") as scope:
                 for i in range(self.seqLen):
                     if i == 1:
                         scope.reuse_variables()
-                    O,S = stackCell(_Z1[i],S)
+                    O,S = stackCell(_Z1,S)
 
             predCell = tf.matmul(O, self.weights['classi_HO_W'])  + \
                        self.biases['classi_HO_B']
@@ -244,6 +249,53 @@ class actConnGraph(object):
                        self.biases['classi_HO_B']
 
         return predCell
+
+        #Network prediction
+
+
+    def __classOptoPercep__(self,_Z1):
+
+        ''' Reccurent neural network with a classifer (logistic) as output layer
+            that tries to predicted if there was an otpogenetic stimulation in 
+            a neuron j. Input will be time serie of neuron(s) i starting at time t 
+            and output will be a binary value, where the label is whether x was 
+            stimulated or not at t-z. 
+
+
+        '''
+
+                #Defining weights
+
+        #Creating weight matrices 
+        self.weights = {   l: varInit([self.nhidclassi]*2, 'hidW'+str(l),
+                                       ortho = False, std = 0.01) 
+                                       for l in range(self.multiLayer)   }
+        self.weights['in']  = varInit( [self.seqLen,self.nhidclassi],'inW',
+                                       ortho = False, std = 0.01 )
+        self.weights['out'] = varInit( [self.nhidclassi,1],'outW', 
+                                       ortho = False, std = 0.01 )
+                                
+        #Creating biases
+        self.biases  = {  l: varInit([self.nhidclassi],'bias'+str(l))
+                             for l in range(self.multiLayer) } 
+        self.biases['in']  = varInit([self.nhidclassi],'inB')
+        self.biases['out'] = varInit([1],'outB')
+
+        self.masks   = { }
+
+        #Input layer
+        H = tf.add( tf.matmul( _Z1,self. weights['in'] ), self.biases['in'] )
+        H = self.actfct(H)
+
+        #Hidden layers
+        for l in range(self.multiLayer):
+            H = tf.add( tf.matmul( H, self.weights[l] ), self.biases[l] )
+            H = self.actfct(H)
+
+        #Output layer
+        pred = tf.matmul(H,self.weights['out']) + self.biases['out']
+
+        return pred
 
         #Network prediction
 
@@ -729,17 +781,9 @@ class actConnGraph(object):
             teNSidx = randint( 0, len( D['Yte'][1] ),
                               [int(self.batchSize/2), self.nbIters] )
 
-
-        #Unpacking data
-        Xtr = D['Xtr']
-        Ytr = D['Ytr'] 
-        Xte = D['Xte']
-        Yte = D['Yte']
-
         #Initialize counters
         stepTr  = 0 #Training steps
         stepBat = 0 #Testing steps
-        Loss    = 0 #Hold the last X points for mean Loss
         accNum  = 0 #To calculate accuracy over time
 
         #Initialize holders
@@ -749,10 +793,9 @@ class actConnGraph(object):
             self.grad   = [None]*self.nbIters
             self.lossTr = [None]*self.nbIters
             self.lossTe = []
-
-        ansTr = np.round(np.random.rand(500,2))
-        ansTe = np.round(np.random.rand(500,2))
-        self.acc = []
+            ansTr       = np.round(np.random.rand(500,2))
+            ansTe       = np.round(np.random.rand(500,2))
+            self.acc    = []
 
 
         #Setting configs for minimum threads (small model)
@@ -775,10 +818,10 @@ class actConnGraph(object):
 
                 #Train feed dictionnary 
                 FD_tr = self._feedDict(D['Xtr'], stepTr ,trSidx, trNSidx)
-                #Test feed dictionnary 
-                FD_te = self._feedDict(D['Xte'], stepTr ,teSidx, teNSidx)
 
                 if detail:
+                    #Test feed dictionnary 
+                    FD_te = self._feedDict(D['Xte'], stepTr ,teSidx, teNSidx)
                     if 'class' in self.model:
                            if accNum == 500:
                                 accNum = 0
@@ -791,9 +834,6 @@ class actConnGraph(object):
 
                            accNum += 1
 
-                    if stepTr >= self.nbIters-500:
-                       Loss = Loss + lossTe/500
-
                     self.lossTr[stepTr] = sess.run(self._ngml, feed_dict = FD_tr)
                     self.grad[stepTr]   = sess.run(self._grad, feed_dict = FD_tr)
 
@@ -801,13 +841,6 @@ class actConnGraph(object):
                     if self.sampRate > 0 and not stepTr%self.sampRate:
                         self._trackVar( nbSamp, samp, self.v2track )
                         samp +=1
-
-                elif stepTr >= self.nbIters-500:
-                    if 'class' in self.model:
-                           cla, _y = sess.run(self._resp, feed_dict =FD_te)
-
-                           ansTe[accNum,:]  = np.squeeze(cla)
-                           accNum += 1
 
 
                 if detail and stepTr % self.dispStep == 0:
@@ -840,22 +873,24 @@ class actConnGraph(object):
 
                 stepTr  += 1
                 stepBat += 1
-
-            self.finalAcc = (np.sum(ansTe))/(500*self.batchSize)
-            #print(self.finalAcc)
+            
+            #Final accuracy
+            self._finalAcc(D,sess)
 
             #Saving variables
             if detail:
+                self.finalAcc = (np.sum(ansTr))/(500*self.batchSize)
                 self.saver.save(sess, savepath)
                 self.saver.save(sess, backupPath)
                 
                 #Saving variables final state
                 self.evalVars = {v.name: v.eval() for v in tf.trainable_variables()}
 
-                print('Final accuracy : {:.2f}'.format(self.finalAcc*100))
+                print('\nFinal training accuracy : {:.2f} '.format(self.AccTr))
+                print(  'Final testing accuracy  : {:.2f} '.format(self.AccTe))
                 print('\nTotal time:  ' + str(datetime.timedelta(seconds = time.time()-t)))
             
-        return Loss
+        return self.AccTe
 
     def _classiPred(self):
         out  = tf.nn.sigmoid(self._Z2)
@@ -866,13 +901,43 @@ class actConnGraph(object):
         resp = tf.equal(Y,_Y) 
         return resp, _Y
 
-    def _feedDict(self, D, stepTr ,idxS, idxNS):
+    def _finalAcc(self,D,sess):
 
-        FD ={ self._X : np.vstack([ D[0][idxS[:, stepTr],:],
-                                    D[1][idxNS[:,stepTr],:] ]), 
-              self._Y : np.vstack([ [1] * int(self.batchSize/2),
-                                    [0] * int(self.batchSize/2) ]),
-              self._batch : stepTr  }
+        #Number of examples per label
+        nlabTr1 = len(D['Ytr'][0]); nlabTe1 = len(D['Yte'][0])
+
+        finalAccTr_D = self._feedDict(D['Xtr'])
+        finalAccTe_D = self._feedDict(D['Xte'])
+
+        AccTr,self.respTr = sess.run(self._resp, feed_dict = finalAccTr_D)
+        AccTe,self.respTe = sess.run(self._resp, feed_dict = finalAccTe_D)
+
+        AccTr1 = np.mean(AccTr[:nlabTr1]); AccTr0 = np.mean(AccTr[nlabTr1:])
+        AccTe1 = np.mean(AccTe[:nlabTe1]); AccTe0 = np.mean(AccTe[nlabTe1:])
+
+
+        self.AccTr = (AccTr1+AccTr0)*50
+        self.AccTe = (AccTe1+AccTe0)*50
+
+
+
+    def _feedDict(self, D, stepTr= None, idxS= None, idxNS= None):
+
+
+        if not stepTr == None:
+          FD ={ self._X : np.vstack([ D[0][idxS[:, stepTr],:],
+                                      D[1][idxNS[:,stepTr],:] ]), 
+                self._Y : np.vstack([ [1] * int(self.batchSize/2),
+                                      [0] * int(self.batchSize/2) ]),
+                self._batch     : stepTr,
+                self._batchSize : self.batchSize }
+        else:
+          len(D[0]) + len(D[1])
+          FD ={ self._X : np.vstack([ D[0],D[1] ]),
+                self._Y : np.hstack([ [[1] * len(D[0])],
+                                      [[0] * len(D[1])] ]).T,
+                self._batch     : 1,
+                self._batchSize : len(D[0]) + len(D[1]) }
 
         return FD
 
