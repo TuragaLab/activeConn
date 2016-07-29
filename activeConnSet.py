@@ -92,9 +92,9 @@ def activeConn(paramDict, data, run = True, graph= None):
     #Launch Graph
     if run:
         #print('Launching Session ...')
-        Loss = graph.launchGraph( dataDict, detail = pDict['detail'], savepath = savepath )
+        Acc = graph.launchGraph( dataDict, detail = pDict['detail'], savepath = savepath )
     else:
-        Loss = None
+        Acc = None
 
-    return graph, dataDict, Loss
+    return graph, dataDict, Acc
 
