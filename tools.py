@@ -475,9 +475,8 @@ def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,-1
             label[s] = 0
 
     Dstim  = np.float32(Dstim) #For tensorflow
-
-    perm  = np.random.permutation(len(label))
-    label = label[perm]
+    #perm  = np.random.permutation(len(label))
+    #label = label[perm]
 
     #Label counts
     labIdx1 = np.where(label == 1)[0] #Idx of cells[0] stimulation
@@ -717,21 +716,31 @@ def meanSTA(data, frames, nstim=8, nf= 241):
     occur = len(frames)/nstim   # Number of occurences for each stim
     
     #Initialization
-    sumSTA = np.zeros([nstim,N,nf]) # Will hold the sum of each elements
-    shift  = int(np.floor(nf/4))    # Shifting of window
+    sumSTA  = np.zeros([nstim,N,nf]) # Will hold the sum of each elements
+    shift   = int(np.floor(nf/4))    # Shifting of window
+    stimDat = []
 
-    #Calculate sum CTA
+    #Calculate sum STA
     stim = 0
     for f in frames:
         sumSTA[stim,:] += data[:,f+1-shift:f+1+nf-shift]
+        stimDat = np.hstack(stimDat,data[:,f+1-shift:f+1+nf-shift])
         
         #Increment stim index
         if stim != nstim-1:
             stim += 1
         else:
             stim = 0
-       
-    return sumSTA/occur  
+
+    meanSTA = sumSTA/occur
+
+    cellResp = np.zeros([8,N])
+    for stim in range(8):
+        #Integrating overtime
+        cellResp[stim,:] = np.sum(meanSTA[stim,:,shift:-shift],axis=1)
+        
+
+    return meanSTA, cellResp, stimDat
 
 
 def remBaseline(data, percentile = 10, binsize = 1000):
@@ -865,7 +874,7 @@ def stim_nstim_split(data,frameSet):
     return data_nstim, data_stim
 
 
-def varInit(dim, Wname, train = True, std = 0):
+def varInit(dim, Wname, ortho = False, train = True, std = None):
     ''' 
     Will create a tf weight matrix with weight values proportional
     to number of neurons. 
@@ -884,19 +893,32 @@ def varInit(dim, Wname, train = True, std = 0):
     ________________________________________________________________________
 
     '''
-
     #Putting in list format
+    dim = np.int32(dim)
     if type(dim) is int:
         dim = [dim]
 
-    numUnit = sum(dim)  #Total number of units projecting to 
+    if ortho:
+      flat_shape = (dim[0], np.prod(dim[1:]))
+      a = np.random.normal(0.0, 1.0, flat_shape)
+      u, _, v = np.linalg.svd(a, full_matrices=False)
+      # pick the one with the correct shape
+      q = u if u.shape == flat_shape else v
+      q = q.reshape(dim) #this needs to be corrected to float32
 
-    if not std:
-        std = 1/ np.sqrt(numUnit)
+      ortho = tf.constant(std * q[:dim[0], :dim[1]], dtype = tf.float32)
 
-    W = tf.get_variable( Wname, initializer = tf.random_normal( dim,
-                                              stddev = std), 
-                         trainable= train )
+      W = tf.get_variable( Wname, initializer = ortho, 
+                                  trainable   = train  )
+    else:
+        numUnit = sum(dim)  #Total number of units projecting to 
+
+        if not std:
+            std = 1/ np.sqrt(numUnit)
+
+        W = tf.get_variable( Wname, initializer = tf.random_normal( dim,
+                                                  stddev = std), 
+                                    trainable   = train )
     return W
 
 
