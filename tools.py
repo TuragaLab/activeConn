@@ -429,9 +429,6 @@ def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,-1
     B  = dataDict['baseline']
     D  = dataDict['dataset']   #Dataset
 
-    #Spontaneous datasets
-    DS = dataDict['datasetSpont'] #Spontaneous activity dataset
-    BS = dataDict['baselineSpont']
 
     nS = len(F)     #Number of stimulations
     nN = D.shape[0] #Number of units
@@ -442,7 +439,7 @@ def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,-1
     #D =  preProcess(D,  method = method, base = B)
     #DS = preProcess(DS, method = method, base = BS)
 
-    D = D.T ; DS = DS.T #Transposing for final shape
+    D = D.T #Transposing for final shape
 
     #Extracting post-stim sequences
     # Will take 'sL' time points around (defined by stimulation frame
@@ -474,9 +471,11 @@ def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,-1
         else:
             label[s] = 0
 
-    Dstim  = np.float32(Dstim) #For tensorflow
-    #perm  = np.random.permutation(len(label))
-    #label = label[perm]
+    Dstim = np.float32(Dstim) #For tensorflow
+
+    #Shuffle labels
+    perm  = np.random.permutation(len(label))
+    label = label[perm]
 
     #Label counts
     labIdx1 = np.where(label == 1)[0] #Idx of cells[0] stimulation
@@ -503,6 +502,13 @@ def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,-1
     if ctrl == 'spont':
         #Will use spontaneous activity for no-stim label data
         #print('Using spontaneous data for label 0.\n')
+
+        #Spontaneous datasets
+        DS = dataDict['datasetSpont'] #Spontaneous activity dataset
+        BS = dataDict['baselineSpont']
+
+        DS = DS.T; BS = BS.T
+
 
         #Training inputs
         spontIdxTr = np.random.randint(0,np.shape(DS)[0]-sL,nTrain0)
