@@ -71,7 +71,7 @@ import tensorflow as tf
 
 '''
 
-def simul(argDict = None, run = True):
+def simul(argDict = None, run = True, graph = None):
     ''' 
     Parameter file for simulation.
     
@@ -89,69 +89,82 @@ def simul(argDict = None, run = True):
 
     #Parameters -----------------------------------------------------------------------
 
+    ''' parameter file for simulation.
+        
+        run     : If running the simulation or not
+        argDict : Overwriting certain paramers. Has to be of type dict
+         '''
+
+    # General Parameters ---------------------------------------------------------------
+
     #dataset = 'kmeans0.npy'   #Dataset name
     _mPath   = '/groups/turaga/home/castonguayp/research/activeConn/' # Main path
-    dataset  = 'FR_RNN.mat'
+    dataset  = 'stblockOPTO.npy'
     #_mPath   = '/home/phabc/Main/research/janelia/turaga/Shotgun/'
-    saveName = 'sim.ckpt'
+    saveName = 'block.ckpt'
 
     # algorithm parameters
-    batchSize = 20      
-    dispStep  = 100
-    learnRate = 0.0001
-    nbIters   = 10000   
-    sampRate  = 100
-    v2track   = ['ng_IH_HH/MultiRNNCell/Cell0/BasicRNNCell/Linear/Matrix',
-                 'ng_Gmean', 'ng_Gstd', 'alpha_W']
+    detail    = True
+    batchSize = 1
+    dispStep  = 100     
+    learnRate = 0.0005
+    nbIters   = 1000
+    sampRate  = 0
+    v2track   = ['']   
 
     #Cost parameters
-    sparsW   = 0.05
-    lossW    = 0.1
+    sparsW   = .005
+    lossW    = 1
 
     #Network Parameters
-    actfct   = tf.nn.relu 
-    model    = '__NGCmodel__'
-    nhidGlob = 10       
-    nhidNetw = 400      
-    nInput   = 400      
-    nOut     = 400      
-    seqLen   = 5        
+    actfct   = tf.nn.relu    
+    model    = '__classOptoPercep__' 
+    nInput   = 1             
+    nhidGlob = 10             
+    nhidNetw = 348             
+    nOut     = 348                        
 
-    nhidclassi = 5
+    nhidclassi = 30
+    multiLayer = 3    
+
 
     # Data parameters
-    method = 2  
-    YDist = 1  
+    method   = 1
+    ctrl     = 'noStim'
+    cells    = [200,200]
+    seqRange = [[-10,-2],[2,10]]
+    
 
-    #Graph ----------------------------------------------------------------------------
+    #Graph build and execution --------------------------------------------------------
 
     #Packing dictionnary
+
     paramDict = {
             'dataset'  : dataset,   '_mPath'  : _mPath,   'saveName'  : saveName, 
             'learnRate': learnRate, 'nbIters' : nbIters,  'batchSize' : batchSize, 
             'dispStep' : dispStep,  'model'   : model,    'actfct'    : actfct,  
-            'method'   : method,    'seqRange': seqRange, 'seqLen'    : seqLen,
-            'nhidGlob' : nhidGlob,  'nhidNetw': nhidNetw, 'nInput'    : nInput,
+            'method'   : method,    'seqRange': seqRange, 'multiLayer': multiLayer,
+            'nhidGlob' : nhidGlob ,  'nhidNetw': nhidNetw, 'nInput'   : nInput,
             'nOut'     : nOut   ,   'sampRate': sampRate, 'v2track'   : v2track,
             'sparsW'   : sparsW,    'lossW'   : lossW,    'nhidclassi': nhidclassi,
-            'cells'    : cells
+            'cells'    : cells,     'ctrl'    : ctrl,     'detail'    : detail,
 
                  }
 
     #Overwrite any parameters with extra arguments
     if argDict:
         paramDict.update(argDict)
+    #Lenght of sequences
+    paramDict['seqLen'] = paramDict['seqRange'][0][1] - paramDict['seqRange'][0][0] + \
+                          paramDict['seqRange'][1][1] - paramDict['seqRange'][1][0] 
 
-    # Loading data 
-    print('Loading Data      ...')
-    dPath = _mPath + 'data/' + dataset  # Dataset path
-    data  = loadmat(dPath)['FR']
+    #Loading data 
+    dataD = loadDataRand('simul', _mPath, dataset)
+    dataD['stimIdx'] = dataD['stimIdx']
+  
+    graph, dataDict, Acc = activeConn(paramDict, dataD, run= run, graph= graph)
 
-    #Running activeConn ~ Should be called seperatly 
-    graph, dataDict, Loss = activeConn(paramDict, data, run= run)
-
-    return graph, dataDict, Loss
-
+    return graph, dataDict, Acc
 
 
 def optoV1(argDict = None, run = True, graph= None):
@@ -173,33 +186,33 @@ def optoV1(argDict = None, run = True, graph= None):
     detail    = True
     batchSize = 1
     dispStep  = 100     
-    learnRate = 0.0001 
-    nbIters   = 5000
+    learnRate = 0.0005 
+    nbIters   = 1000
     sampRate  = 0
-    v2track   = ['ng_IH_HH/MultiRNNCell/Cell0/BasicRNNCell/Linear/Matrix',
-                 'ng_Gmean', 'ng_Gstd', 'alpha_W']   
+    v2track   = ['']   
 
     #Cost parameters
-    sparsW   = .1
+    sparsW   = .005
     lossW    = 1
 
     #Network Parameters
-    actfct   = tf.tanh    
-    model    = '__classOpto__' 
+    actfct   = tf.nn.relu    
+    model    = '__classOptoPercep__' 
     nInput   = 1             
     nhidGlob = 10             
     nhidNetw = 348             
     nOut     = 348                        
 
     nhidclassi = 30
+    multiLayer = 3    
+
 
     # Data parameters
     method   = 1
     ctrl     = 'noStim'
-    cells    = [217,217]
-    seqRange = [[-5,-2],[2,5]]
-    multiLayer = None    
-
+    cells    = [200,200]
+    seqRange = [[-10,-2],[2,10]]
+    
 
     #Graph build and execution --------------------------------------------------------
 
@@ -229,10 +242,9 @@ def optoV1(argDict = None, run = True, graph= None):
     dataD = loadDataRand('optoV1', _mPath, dataset)
     dataD.update(loadDataSpont('optoV1', _mPath, dataset))
 
-    graph, dataDict, Loss = activeConn(paramDict, dataD, run= run, graph= graph)
+    graph, dataDict, Acc = activeConn(paramDict, dataD, run= run, graph= graph)
 
-    return graph, dataDict, Loss
-
+    return graph, dataDict, Acc
 
 
 def loadDataRand(mainName, mPath, dataset):
@@ -262,7 +274,7 @@ def loadDataRand(mainName, mPath, dataset):
                 data['baseline'].append(dat[key][:])
             elif 'data' in key:
                 data['dataset'].append(dat[key][:])
-            elif 'Frame' in key:
+            elif 'stimF' in key:
                 data['stimFrame'].append(dat[key][:]+T*frameSet)
                 frameSet +=1 #Correcting for the stacking
             elif 'Idx' in key:
@@ -273,6 +285,10 @@ def loadDataRand(mainName, mPath, dataset):
         #Transposing stimIdx
         data['stimIdx'] = data['stimIdx'].T
 
+    elif mainName == 'simul':
+
+        dPath = mPath + 'data/' + dataset
+        data   = np.load(dPath).all()
 
     return data
 
