@@ -268,9 +268,9 @@ class actConnGraph(object):
 
         #Creating weight matrices 
         self.weights = {   l: varInit([self.nhidclassi]*2, 'hidW'+str(l),
-                                       ortho = False, std = 0.01) 
+                                       ortho = False, std = 0.01 ) 
                                        for l in range(self.multiLayer)   }
-        self.weights['in']  = varInit( [self.seqLen,self.nhidclassi],'inW',
+        self.weights      ['in']  = varInit( [self.seqLen,self.nhidclassi],'inW',
                                        ortho = False, std = 0.01 )
         self.weights['out'] = varInit( [self.nhidclassi,1],'outW', 
                                        ortho = False, std = 0.01 )
