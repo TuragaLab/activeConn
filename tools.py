@@ -422,7 +422,7 @@ def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,-1
 
     '''
 
-    cells[1] = cells[1] - 1  #Correction for index in python
+    cellLabel = cells[1] - 1  #Correction for index in python
 
     F  = dataDict['stimFrame'] #Frame of stimulation
     I  = dataDict['stimIdx']   #Index of neuron stimulated
@@ -474,8 +474,8 @@ def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,-1
     Dstim = np.float32(Dstim) #For tensorflow
 
     #Shuffle labels
-    perm  = np.random.permutation(len(label))
-    label = label[perm]
+    #perm  = np.random.permutation(len(label))
+    #label = label[perm]
 
     #Label counts
     labIdx1 = np.where(label == 1)[0] #Idx of cells[0] stimulation
@@ -538,8 +538,8 @@ def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,-1
                      Dstim[:,labIdx0[testIdx0], :] ]
 
     #Taking  only decoding cell
-    trInput = [ lab[:,:,cells[1]].T for lab in trInput ] 
-    teInput = [ lab[:,:,cells[1]].T for lab in teInput ]
+    trInput = [ lab[:,:,cellLabel].T for lab in trInput ] 
+    teInput = [ lab[:,:,cellLabel].T for lab in teInput ]
 
     trInput = [preProcess(lab,  method = method) for lab in trInput]
     teInput = [preProcess(lab,  method = method) for lab in teInput]
@@ -549,7 +549,7 @@ def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,-1
     teLabel = [ label[labIdx1[testIdx1]],  label[labIdx0[testIdx0]]  ]
 
     print( 'Stimulated cell : {}\n'.format(cells[0])  +
-           'Decoding cell   : {}\n'.format(cells[1]+1)  )
+           'Decoding cell   : {}\n'.format(cellLabel+1)  )
 
     # One hot  
     # teOutput =  np.zeros([len(teLabel),2])
@@ -724,13 +724,13 @@ def meanSTA(data, frames, nstim=8, nf= 241):
     #Initialization
     sumSTA  = np.zeros([nstim,N,nf]) # Will hold the sum of each elements
     shift   = int(np.floor(nf/4))    # Shifting of window
-    stimDat = []
+    #stimDat = []
 
     #Calculate sum STA
     stim = 0
     for f in frames:
         sumSTA[stim,:] += data[:,f+1-shift:f+1+nf-shift]
-        stimDat = np.hstack(stimDat,data[:,f+1-shift:f+1+nf-shift])
+        #stimDat = np.hstack([stimDat,data[:,f+1-shift:f+1+nf-shift]])
         
         #Increment stim index
         if stim != nstim-1:
@@ -746,7 +746,7 @@ def meanSTA(data, frames, nstim=8, nf= 241):
         cellResp[stim,:] = np.sum(meanSTA[stim,:,shift:-shift],axis=1)
         
 
-    return meanSTA, cellResp, stimDat
+    return meanSTA, cellResp #, stimDat
 
 
 def remBaseline(data, percentile = 10, binsize = 1000):
