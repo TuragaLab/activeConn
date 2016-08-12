@@ -129,6 +129,7 @@ class actConnGraph(object):
             if 'class' in self.model:
                 self._Y = tf.placeholder("float32", [None,1], name = 'Y')
                 self._X = tf.placeholder("float32", [None, self.seqLen], name = 'X') 
+                self._keepProb =  tf.placeholder("float32", [] , name = 'keepProb') 
             else:
                 self._Y = tf.placeholder("float32", [None, self.nInput], name = 'Y')
                 self._X = tf.placeholder("float32", [None, self.seqLen, self.nInput], 
@@ -290,6 +291,7 @@ class actConnGraph(object):
         #Hidden layers
         for l in range(self.multiLayer):
             H = tf.add( tf.matmul( H, self.weights[l] ), self.biases[l] )
+            H = tf.nn.dropout(H, self._keepProb) #Dropout
             H = self.actfct(H)
 
         #Output layer
@@ -930,14 +932,16 @@ class actConnGraph(object):
                 self._Y : np.vstack([ [1] * int(self.batchSize/2),
                                       [0] * int(self.batchSize/2) ]),
                 self._batch     : stepTr,
-                self._batchSize : self.batchSize }
+                self._batchSize : self.batchSize,
+                self._keepProb  : self.keepProb   }
         else:
           len(D[0]) + len(D[1])
           FD ={ self._X : np.vstack([ D[0],D[1] ]),
                 self._Y : np.hstack([ [[1] * len(D[0])],
                                       [[0] * len(D[1])] ]).T,
                 self._batch     : 1,
-                self._batchSize : len(D[0]) + len(D[1]) }
+                self._batchSize : len(D[0]) + len(D[1]),
+                self._keepProb  : 1.0  }
 
         return FD
 
