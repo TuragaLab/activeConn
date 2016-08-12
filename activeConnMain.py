@@ -99,7 +99,7 @@ def simul(argDict = None, run = True, graph = None):
 
     #dataset = 'kmeans0.npy'   #Dataset name
     _mPath   = '/groups/turaga/home/castonguayp/research/activeConn/' # Main path
-    dataset  = 'stblockOPTO.npy'
+    dataset  = 'stblockOPTO_30Hz_y097.npy'
     #_mPath   = '/home/phabc/Main/research/janelia/turaga/Shotgun/'
     saveName = 'block.ckpt'
 
@@ -110,10 +110,11 @@ def simul(argDict = None, run = True, graph = None):
     learnRate = 0.0005
     nbIters   = 1000
     sampRate  = 0
-    v2track   = ['']   
+    v2track   = ['']
+    keepProb  = 0.5
 
     #Cost parameters
-    sparsW   = .005
+    sparsW   = .000000001
     lossW    = 1
 
     #Network Parameters
@@ -148,23 +149,24 @@ def simul(argDict = None, run = True, graph = None):
             'nOut'     : nOut   ,   'sampRate': sampRate, 'v2track'   : v2track,
             'sparsW'   : sparsW,    'lossW'   : lossW,    'nhidclassi': nhidclassi,
             'cells'    : cells,     'ctrl'    : ctrl,     'detail'    : detail,
-
+            'keepProb' : keepProb,
                  }
 
     #Overwrite any parameters with extra arguments
     if argDict:
         paramDict.update(argDict)
+
     #Lenght of sequences
     paramDict['seqLen'] = paramDict['seqRange'][0][1] - paramDict['seqRange'][0][0] + \
                           paramDict['seqRange'][1][1] - paramDict['seqRange'][1][0] 
 
     #Loading data 
-    dataD = loadDataRand('simul', _mPath, dataset)
+    dataD = loadDataRand('simul', _mPath, paramDict['dataset'])
     dataD['stimIdx'] = dataD['stimIdx']
   
     graph, dataDict, Acc = activeConn(paramDict, dataD, run= run, graph= graph)
 
-    return graph, dataDict, Acc
+    return graph, dataDict, activeConn
 
 
 def optoV1(argDict = None, run = True, graph= None):
@@ -183,16 +185,17 @@ def optoV1(argDict = None, run = True, graph= None):
     saveName = 'opto.ckpt'
 
     # algorithm parameters
-    detail    = True
+    detail    = False
     batchSize = 1
     dispStep  = 100     
     learnRate = 0.0005 
     nbIters   = 1000
     sampRate  = 0
-    v2track   = ['']   
+    v2track   = ['']
+    keepProb  = 1
 
     #Cost parameters
-    sparsW   = .005
+    sparsW   = .0000000005
     lossW    = 1
 
     #Network Parameters
@@ -210,14 +213,13 @@ def optoV1(argDict = None, run = True, graph= None):
     # Data parameters
     method   = 1
     ctrl     = 'noStim'
-    cells    = [200,200]
-    seqRange = [[-10,-2],[2,10]]
+    cells    = [79,79]
+    seqRange = [[-10,-0],[0,10]]
     
 
     #Graph build and execution --------------------------------------------------------
 
     #Packing dictionnary
-
     paramDict = {
             'dataset'  : dataset,   '_mPath'  : _mPath,   'saveName'  : saveName, 
             'learnRate': learnRate, 'nbIters' : nbIters,  'batchSize' : batchSize, 
@@ -227,7 +229,7 @@ def optoV1(argDict = None, run = True, graph= None):
             'nOut'     : nOut   ,   'sampRate': sampRate, 'v2track'   : v2track,
             'sparsW'   : sparsW,    'lossW'   : lossW,    'nhidclassi': nhidclassi,
             'cells'    : cells,     'ctrl'    : ctrl,     'detail'    : detail,
-
+            'keepProb' : keepProb,
                  }
 
     #Overwrite any parameters with extra arguments
@@ -240,7 +242,7 @@ def optoV1(argDict = None, run = True, graph= None):
     # Loading data 
     #print('Loading Data      ...')
     dataD = loadDataRand('optoV1', _mPath, dataset)
-    dataD.update(loadDataSpont('optoV1', _mPath, dataset))
+    dataD.update(loadDataSpont('optoV1', _mPath, paramDict['dataset']))
 
     graph, dataDict, Acc = activeConn(paramDict, dataD, run= run, graph= graph)
 
