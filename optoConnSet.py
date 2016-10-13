@@ -5,15 +5,15 @@
 import numpy             as np
 import matplotlib.pyplot as plt
 
-from os.path           import expanduser 
-from scipy.io          import loadmat
-from activeConn.graphs import *
-from activeConn.tools  import *
+from os.path         import expanduser 
+from scipy.io        import loadmat
+from optoConn.graphs import *
+from optoConn.tools  import *
 
 import tensorflow as tf
 
 
-def activeConn(paramDict, data, run = True, graph= None):
+def optoConn(paramDict, data, run = True, graph= None):
     '''
     Bayesian RNN for Active Connectomics Learning
            
@@ -36,16 +36,14 @@ def activeConn(paramDict, data, run = True, graph= None):
 
     #Default model parameters
     pDict = {
-               'dataset':'FR_RNN.mat', '_mPath': expanduser("~") + '/.activeConn/',
+               'dataset':'FR_RNN.mat', '_mPath': expanduser("~") + '/.optoConn/',
                'saveName': 'ckpt.ckpt', 'learnRate': 0.0001, 'nbIters':10000,
                'batchSize': 50, 'dispStep':200, 'model': '__NGCmodel__', 'detail':True,
-               'actfct':tf.tanh,'method':1, 'YDist':1 , 'sampRate':0             
+               'actfct':tf.tanh,'prepMethod':1, 'YDist':1 , 'sampRate':0             
              }       
 
     #Updatating pDict with input dictionnary
     pDict.update(paramDict)
-
-    #Verifying if data is consistent with model
 
     # Path
     savepath = pDict['_mPath'] + 'checkpoints/' + pDict['saveName'] # Checkpoint save path
@@ -53,25 +51,31 @@ def activeConn(paramDict, data, run = True, graph= None):
 
     #Formatting data
     if type(data) is dict:
+        if data['dataset'].shape[0] != pDict['nInput']:
+           data['dataset'] = data['dataset'][:pDict['nInput'],:]
+           data['baseline'] = data['baseline'][:pDict['nInput'],:]
+
         if 'class' in pDict['model']:
             pDict['nInput']    = 1
             pDict['batchSize'] = pDict['batchSize']*2
             dataDict = dataPrepClassi( data,
-                                       ctrl     = pDict['ctrl'],
-                                       cells    = pDict['cells'],
-                                       seqRange = pDict['seqRange'], 
-                                       method   = pDict['method']  )
+                                       ctrl       = pDict['ctrl'],
+                                       cells      = pDict['cells'],
+                                       null       = pDict['null'] ,
+                                       seqRange   = pDict['seqRange'], 
+                                       prepMethod = pDict['prepMethod']  )
         else:
-            dataDict = dataPrepGenerative( data['dataset'], 
-                                           seqRange = pDict['seqRange'],
-                                           method   = pDict['method'] )
+            dataDict = dataPrepGenerative( data, 
+                                           seqRange   = pDict['seqRange'],
+                                           prepMethod = pDict['prepMethod'],
+                                           null       = pDict['null'] )
 
         tempD = {key: data[key] for key in data if key not in 'dataset'}
         dataDict.update(tempD)
     else:
         dataDict = dataPrepGenerative( data, 
-                                       seqRange = pDict['seqRange'],
-                                       method   = pDict['method'] 
+                                       seqRange     = pDict['seqRange'],
+                                       prepMethod   = pDict['prepMethod'] 
                                        )
 
     #InputSize warming
