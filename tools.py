@@ -193,12 +193,10 @@ def calcResponseMulti(data, stimFrames, stimOrder, nf = 12, nfb = 1):
         nReps     = nStim/nStimCell            # Number of time each cell is stimulated
 
         #Duplicated for repeating stim cycle
-        print(np.arange(nStim).shape)
-        print(np.tile(stimOrder, [1,2])[0].shape)
         listStim  = np.vstack([np.arange(nStim),np.tile(stimOrder, [1,2])[0]]) 
 
 
-    cellList  = np.arange(nStimCell) # List of cell idx
+    cellList = np.arange(nStimCell) # List of cell idx
 
     #Ordering stimulation frames based on neuron number 
     ordStim  = listStim[1,:].argsort()
@@ -377,9 +375,21 @@ def cellRespMulti(data, stimFrames, stimOrder, nf = 30, nfb = 1):
     return trig, allS, ctrl #diff
 
 
+def corr2_coeff(A,B):
+    # Rowwise mean of input arrays & subtract from input arrays themeselves
+    A_mA = A - A.mean(1)[:,None]
+    B_mB = B - B.mean(1)[:,None]
+
+    # Sum of squares across rows
+    ssA = (A_mA**2).sum(1);
+    ssB = (B_mB**2).sum(1);
+
+    # Finally get corr coeff
+    return np.dot(A_mA,B_mB.T)/np.sqrt(np.dot(ssA[:,None],ssB[None]))
+
 
  
-def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,-1],[0,1]], method = 1):
+def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], null = False, seqRange= [[-2,-1],[0,1]], prepMethod = 1):
 
 
     ''' Putting the data in the right format for training for 
@@ -398,11 +408,14 @@ def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,-1
 
         NEED TO ADJUST THE SPONT STIM BECAUSE OF SEQUENCE BREAKING CAUSED BY NEW SEQRANGE
 
-        method : 0 = No transformation
-                 1 = standardization
-                 2 = normalization
-                 3 = normalization with value shifted to positive
-                 4 = standardization + normalization
+        null : Whether the output values are shuffled or not
+
+        prepMethod : 0 : No transformation
+                 1 : standardization
+                 2 : normalization
+                 3 : normalization with value shifted to positive
+                 4 : standardization + normalization
+                 5 : Baseline division
 
     ________________________________________________________________________
 
@@ -435,9 +448,13 @@ def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,-1
     sL = seqRange[0][1]-seqRange[0][0]+\
          seqRange[1][1]-seqRange[1][0] #Sequence lenght
 
-    #Preprocessing data (stand or normalization)
-    #D =  preProcess(D,  method = method, base = B)
-    #DS = preProcess(DS, method = method, base = BS)
+    #Preprocessing data 
+    if type(prepMethod) is int:
+        D = preProcess(D, prepMethod = prepMethod, base = B)
+    else:
+        #If a list, executes in order multiple methods
+        for meth in prepMethod:
+            D = preProcess(D, prepMethod = meth, base = B)
 
     D = D.T #Transposing for final shape
 
@@ -473,9 +490,10 @@ def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,-1
 
     Dstim = np.float32(Dstim) #For tensorflow
 
-    #Shuffle labels
-    #perm  = np.random.permutation(len(label))
-    #label = label[perm]
+    #Shuffle labels if null 
+    if null:
+        perm  = np.random.permutation(len(label))
+        label = label[perm]
 
     #Label counts
     labIdx1 = np.where(label == 1)[0] #Idx of cells[0] stimulation
@@ -509,7 +527,6 @@ def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,-1
 
         DS = DS.T; BS = BS.T
 
-
         #Training inputs
         spontIdxTr = np.random.randint(0,np.shape(DS)[0]-sL,nTrain0)
         SPTr = np.dstack([DS[idx:idx+sL,:] for idx 
@@ -541,8 +558,9 @@ def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,-1
     trInput = [ lab[:,:,cellLabel].T for lab in trInput ] 
     teInput = [ lab[:,:,cellLabel].T for lab in teInput ]
 
-    trInput = [preProcess(lab,  method = method) for lab in trInput]
-    teInput = [preProcess(lab,  method = method) for lab in teInput]
+    #Standardizing within each examples
+    trInput = [preProcess(lab,  prepMethod = 2 ) for lab in trInput]
+    teInput = [preProcess(lab,  prepMethod = 2 ) for lab in teInput]
 
     #Stacking label (stim, nostim)
     trLabel = [ label[labIdx1[trainIdx1]], label[labIdx0[trainIdx0]] ]
@@ -551,9 +569,6 @@ def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,-1
     print( 'Stimulated cell : {}\n'.format(cells[0])  +
            'Decoding cell   : {}\n'.format(cellLabel+1)  )
 
-    # One hot  
-    # teOutput =  np.zeros([len(teLabel),2])
-    # teOutput[np.arange(len(teLabel)),teLabel] = 1  
 
     dataDict = { 'Xtr' : trInput , 'Ytr' : trLabel,
                  'Xte' : teInput , 'Yte' : teLabel,
@@ -563,7 +578,7 @@ def dataPrepClassi(dataDict, ctrl= 'noStim', cells= [217,217], seqRange= [[-2,-1
 
     
 
-def dataPrepGenerative(data, seqRange= [10,1], method= 1): 
+def dataPrepGenerative(dataD, seqRange= [10,1], prepMethod= 1, null = False): 
     ''' Putting the data in the right format for training for 
         generative models
 
@@ -573,13 +588,16 @@ def dataPrepGenerative(data, seqRange= [10,1], method= 1):
     ________________________________________________________________________
  
 
-        seqLen : number of time points 
-        method : 0 = No transformation
-                 1 = standardization
-                 2 = normalization
-                 3 = normalization with value shifted to positive
-                 4 = standardization + normalization
-        YDist : Number of timesteps you are tring to predict 
+        seqRange [x,y] : 
+               x : number of time points before  
+               y : point to predict after last time point in x
+        prepMethod   : 0 = No transformation
+                   1 = standardization
+                   2 = normalization
+                   3 = normalization with value shifted to positive
+                   4 = standardization + normalization
+                   5 = Dividing by baseline
+        null     : Whether the output values are shuffled or not
 
     ________________________________________________________________________
 
@@ -603,25 +621,45 @@ def dataPrepGenerative(data, seqRange= [10,1], method= 1):
 
 
     '''
+    
+    if type(dataD) is dict:
+        B  = dataD['baseline']
+        D  = dataD['dataset']   #Dataset
+    else:
+        B  = []
+        D  = dataD
+
+    seqLen = seqRange[0] #Lenght of sequence to predict future time point
+    YDist  = seqRange[1] #Temporal distance of the future time point to predict
 
     #Correcting for python index
     YDist = YDist - 1 
 
-    data_num  = data.shape[1]                      # Number of time points
-    data_size = data.shape[0]                      # Number of units
+    data_num  = D.shape[1]                      # Number of time points
+    data_size = D.shape[0]                      # Number of units
     numSeq    = data_num - (seqLen + YDist + 1) # Number of sequences   
 
     #Preprocessing
-    data = preProcess(data, method = method)
+    if type(prepMethod) is int:
+        D = preProcess(D, prepMethod = prepMethod, base = B)
+    else:
+        #If a list, executes in order multiple methods
+        for meth in prepMethod:
+            D = preProcess(D, prepMethod = meth, base = B)
 
     # Label vectors (Ytr)
-    alOutput  = data[:,seqLen+YDist:-1]                 # Take the seqLen+1 vector as output
+    alOutput  = D[:,seqLen+YDist:-1] # Take the seqLen+1 vector as output
+
+    if null:
+        #Shuffle labels
+        alOutput = np.random.permutation(alOutput.T).T
+
 
     #Input vectors (Xtr)
     alInput   = np.zeros((seqLen, data_size, numSeq))
     for i in range(numSeq):
-        alInput[:,:,i] = data[:, i:(i+seqLen)].T  # seqLen * 10x1 vectors before T+1 (exclusive) 
- 
+        alInput[:,:,i] = D[:, i:(i+seqLen)].T  # seqLen * 10x1 vectors before T+1 (exclusive) 
+    
     #Putting in float32
     alInput  = np.float32(alInput)
     alOutput = np.float32(alOutput)
@@ -629,8 +667,12 @@ def dataPrepGenerative(data, seqRange= [10,1], method= 1):
     # Five fold cross-validation
     training_num = int(numSeq*4/5) # 80% of the data for training
 
-    #Random permutations of sequences
+    #Random permutations of sequencesa
     perms    = np.random.permutation(numSeq)
+
+    #Ordered sequences 
+    perms    = np.arange(numSeq)
+    
     trainIdx = perms[0 : training_num]
     testIdx  = perms[training_num : numSeq]
 
@@ -643,9 +685,9 @@ def dataPrepGenerative(data, seqRange= [10,1], method= 1):
     teOutput = alOutput[:,    testIdx]
 
     #Storing all datasets     
-    dataDict = { 'Xtr'  : trInput.transpose((0,2,1)), 'Ytr' : trOutput.transpose(),
-                 'Xte'  : teInput.transpose((0,2,1)), 'Yte' : teOutput.transpose(),
-                 'FitX' : alInput.transpose((0,2,1)), 'FitY': alOutput.transpose()  }
+    dataDict = { 'Xtr'  : trInput.transpose((2,0,1)), 'Ytr' : trOutput.transpose(),
+                 'Xte'  : teInput.transpose((2,0,1)), 'Yte' : teOutput.transpose(),
+                 'FitX' : alInput.transpose((2,0,1)), 'FitY': alOutput.transpose()  }
 
     return  dataDict
 
@@ -798,27 +840,27 @@ def remBaseline(data, percentile = 10, binsize = 1000):
 
     return dataBL, baseline
 
-def preProcess(D, method = 1, base = None):
+def preProcess(D, prepMethod = 1, base = None):
         #Calibrating data 
     nT = D.shape[1] #Number of time point
 
     #Calibrating data 
-    if method == 1:
+    if prepMethod == 1:
         # Standardizing
         std  = np.tile( np.std(D, axis = 1),(nT,1)).T #Matrix of mean for each row 
         mean = np.tile(np.mean(D, axis = 1),(nT,1)).T #Matrix of std  for each row
         D = np.divide(D-mean,std)
 
-    elif method == 2:
+    elif prepMethod == 2:
         # Normalizing 
         D = D/np.absolute(D).max(axis=1).reshape(-1, 1)
 
-    elif method == 3:
+    elif prepMethod == 3:
         # Normalizing with only positive values by shifting values in positive
         D = D+abs(D.min())
         D = D/D.max(axis=1).reshape(-1, 1)
 
-    elif method == 4: 
+    elif prepMethod == 4: 
         # Standardizing
         std  = np.tile( np.std(D, axis = 1),(nT,1)).T #Matrix of mean for each row 
         mean = np.tile(np.mean(D, axis = 1),(nT,1)).T #Matrix of std  for each row
@@ -827,10 +869,9 @@ def preProcess(D, method = 1, base = None):
         # Normalizing 
         D = D/np.absolute(D).max(axis=1).reshape(-1, 1)
 
-    elif method == 5:
-        #Delta f over F 
+    elif prepMethod == 5:
+        #Delta f over F
         D = D/base
-        #D = preProcess(D, method = 1, base = None)
 
     return D
 
