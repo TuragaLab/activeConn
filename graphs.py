@@ -1,14 +1,14 @@
 import time
 import datetime
 
-from activeConn.tools import *
-from activeConn       import activeConnMain as ACM
-from IPython          import display
-from numpy.random     import randint
+from optoConn.tools import *
+from optoConn       import optoConnMain as ACM
+from IPython        import display
+from numpy.random   import randint
 
-import numpy                as np
-import matplotlib.pyplot    as plt
-import tensorflow           as tf
+import numpy             as np
+import matplotlib.pyplot as plt
+import tensorflow        as tf
 #import matplotlib.animation as anim
 
 from tensorflow.python.ops             import rnn, rnn_cell
@@ -22,16 +22,47 @@ from tensorflow.python.ops.constant_op import constant  as const
                                  MODELS DESCRIPTION
     _________________________________________________________________________
 
-  
 
-    '__NGCmodel__' : RNN(Network&Globalcell) + Calcium dynamic
+    '__classOptoNN__'  :
+            All to all neural network with a classifer (logistic) as output layer
+            that tries to predicted if there was an otpogenetic stimulation in 
+            a neuron j. Input will be time serie of neuron(s) i starting at time t 
+            and output will be a binary value, where the label is whether x was 
+            stimulated or not at t-z. 
+
+
+    '__classOptoRNN__' :
+
+            Reccurent neural network with a classifer (logistic) as output layer
+            that tries to predicted if there was an otpogenetic stimulation in 
+            a neuron j. Input will be time serie of neuron(s) i starting at time t 
+            and output will be a binary value, where the label is whether x was 
+            stimulated or not at t-z. 
+
+    '__NAR__'      :
+
+            Non linear regressive model that predicts the calcium activity at t+i
+            based on the activity of the recorded population. 
+
+
+
+    '__NGCmodel__' : 
+
+            UNDER DEVELOPMENT
+
+            Reccurent neural network with calcium dynamic model that predicts the 
+            calcium activity at t+i based on the activity of the recorded population. 
+
+            The model is composed of two parts :
+           
+                    RNN(Network & Globalcell) + Calcium dynamics
 
                     1. RNN( The global & network cell )
                         
-                      Global cell is a low rank RNN with the goal 
+                      The 'global' cells is a low rank RNN with the goal 
                       of capturing global dynamics (fast and slow). 
 
-                      Network cell tries to capture the real dynamic 
+                      The 'network' cells try to capture the real dynamic 
                       and connectivity between the units observed in 
                       the data.
                     
@@ -41,27 +72,32 @@ from tensorflow.python.ops.constant_op import constant  as const
                       and is also influenced by the previous 
                       inputstep with calcium decay.
 
-
-
     _________________________________________________________________________
 
                                       FUNCTIONS
     _________________________________________________________________________
 
+    batchCreation : Creates batches for training.
 
-    _masking    : Adding masks in the tensorflow graph that will 
-                  be applied to the designed weights after every
-                  variables update.
+    _cost         : Will calculate the cost depending on the model used.
+
+    _masking      : Adding masks in the tensorflow graph that will 
+                    be applied to the designed weights after every
+                    variables update.
     
-    _VNoise     : Adding stochasticity in all the tensorflow graph 
-                  variables after every update for a stotastic 
-                  gradient descent. 
+    _VNoise       : Adding stochasticity in all the tensorflow graph 
+                    variables after every update for a stotastic 
+                    gradient descent. CURRENTLY NOT USED. See masks for
+                    current implementation.
     
-    launchGraph : Will lauch the training of the model.
-    showVars    : Will plot the variables with imshow (matrices)
-                  and plot (vectors)
-    plotfit     : Will plot the test set and the prediction of 
-                  the model.
+    launchGraph   : Will lauch the training of the model
+
+    showVars      : Will plot the variables with imshow (matrices)
+                    and plot (vectors)
+
+    plotfit       : Will plot the test set and the prediction of 
+                    the model. To use for the non-classification model
+                    that predict the time series. 
 
     _________________________________________________________________________
 
@@ -75,8 +111,9 @@ from tensorflow.python.ops.constant_op import constant  as const
      The first character of a mask has a meaning :
     
                        0 : Mask replace the respective weight
-                       1 : Mask is multipled with the respective weight
-                       2 : Mask is added to the respective weight
+                       1 : Mask is added to the respective weight
+                       2 : Mask is multipled with the respective weight
+                       
     
      Mask operations will be executed in the same order
      '_M' should be added at the end of the name if the name in the weights 
@@ -101,7 +138,7 @@ class actConnGraph(object):
     
     featDict: Dictionnary that contains the parameters used to 
               build the graph. To see a list of the parameters,
-              see activeConnMain.py file. 
+              see optoConnMain.py file. 
 
     ________________________________________________________________________
 
@@ -136,23 +173,22 @@ class actConnGraph(object):
                                          name = 'X') 
                         
             self._batch     = tf.placeholder("int32", [], name = 'batch')
-            self._batchSize = tf.placeholder("int32",[], name = 'batchSize')                                               
+            self._batchSize = tf.placeholder("int32",[],  name = 'batchSize')                                               
+
+            #Learning rate decay 
+            self._currLR = tf.train.exponential_decay(self.learnRate, #LR intial value
+                                            self._batch,         #Current batch
+                                            200,                 #Decay step
+                                            0.90,                #Decay rate
+                                            staircase = True)
 
             #Shape data
-            if 'RNN' in self.model: 
+            if not 'class' in self.model: 
               _Z1 = shapeData(self._X, self.seqLen, self.nInput)
               #Prediction using models
               self._Z2 = model(_Z1)
             else:
               self._Z2 = model(self._X)
-
-            #Learning rate decay 
-            LR = tf.train.exponential_decay(self.learnRate, #LR intial value
-                                            self._batch,         #Current batch
-                                            200,                 #Decay step
-                                            0.90,                #Decay rate
-                                            staircase = True)
-            
 
 
             #List of all variables 
@@ -175,7 +211,7 @@ class actConnGraph(object):
  
             #Backpropagation
             self.optimizer = tf.train.AdamOptimizer( learning_rate = 
-                                                     LR ).minimize(cost)
+                                                     self._currLR ).minimize(cost)
 
             #Adding gaussian noise to variables updates
             #self.V_add_noise = self._VNoise(self.variables) # List of var.assign_add(noise) for all variables
@@ -254,9 +290,9 @@ class actConnGraph(object):
         #Network prediction
 
 
-    def __classOptoPercep__(self,_Z1):
+    def __classOptoNN__(self,_Z1):
 
-        ''' Reccurent neural network with a classifer (logistic) as output layer
+        ''' All to all neural network with a classifer (logistic) as output layer
             that tries to predicted if there was an otpogenetic stimulation in 
             a neuron j. Input will be time serie of neuron(s) i starting at time t 
             and output will be a binary value, where the label is whether x was 
@@ -301,6 +337,22 @@ class actConnGraph(object):
 
         #Network prediction
 
+    def __NAR__(self,_Z1):
+      ''' Non Linear Regressive model used to infer the connectivity '''
+
+      self.weights = { 'NAR_W': varInit([self.nInput]*2, 'NAR_W', std = 0.001) }
+      self.biases  = { 'NAR_B': varInit([self.nInput],   'NAR_B', std = 0.001) }
+      self.masks   = { '1NAR_M': tf.random_normal([self.nInput]*2, 
+                                                  .001) * self._currLR }
+      #self.masks = {}
+
+      #Non-linear
+      Z2 = self.actfct( tf.matmul(_Z1[-1], self.weights['NAR_W']) + self.biases['NAR_B'] )
+      
+      #Linear
+      #Z2 = ( tf.matmul(_Z1[-1], self.weights['NAR_W']) ) #  + self.biases['NAR_B'] )
+
+      return Z2
 
 
     def __NGCmodel__(self,_Z1):
@@ -397,98 +449,6 @@ class actConnGraph(object):
         return Z2
 
 
-    def __dir_model__(self,_Z1):
-        #Building the model following the structure defined under actConnGraph class
-
-        #Total number of hidden units
-        nhid = self.nhidNetw + self.nhidGlob
-
-        # Global state initialization
-        initNG = tf.zeros((self.batchSize,nhid),          dtype='float32')
-        initG  = tf.zeros((self.batchSize,self.nhidGlob), dtype='float32') 
-        initN  = tf.zeros((self.batchSize,self.nhidNetw), dtype='float32') 
-
-        #Defining weights
-        self.weights = { 
-                         'ng_H0_W'   : varInit([nhid,self.nOut], 'ng_HO_W' ), 
-                         'alpha_W'   : varInit([self.nInput,1],  'alpha_W' ),
-                         'glob_HO_W' : varInit([self.nhidGlob, self.nOut], 'glob_HO_W')
-                        }
-
-        #Defining masks
-        self.masks = {
-
-                        #Network-Global cell connectivity
-                       '1ng_IH_HH': np.vstack([ 
-                                     #All input connected
-                                     np.ones([self.nInput, nhid],  dtype='float32'), 
-                                     
-                                     #Network (~I & ~Glob) -> Network
-                                     np.hstack([ np.ones( [self.nhidNetw]*2,       dtype='float32')     
-                                          -np.identity(self.nhidNetw,              dtype='float32'),
-                                           np.zeros([self.nhidNetw,self.nhidGlob], dtype='float32') ]),
-
-                                     #Network&Global -> Global
-                                     np.ones([self.nhidGlob,nhid], dtype='float32')
-                                                ]),
-
-                       #Network-Global : Adding noise
-                       '2ng_IH_HH': tf.random_normal([self.nInput + nhid, nhid],
-                                                    0.001) * 0.001,
-
-                       #Calcium decay
-                       '0alpha_M' : tf.clip_by_value(self.weights['alpha_W'],0,1),
-
-                       #Network Cell
-                      '2netw_IH_HH': tf.random_normal([self.nInput + self.nhidNetw, self.nhidNetw],
-                                                    0.001) * 0.001,
-
-                      '1netw_IH_HH':np.vstack([   np.ones( [self.nInput, self.nhidNetw]),
-                                                  np.ones( [self.nhidNetw]*2, dtype='float32')     
-                                                 -np.identity(self.nhidNetw,  dtype='float32')  ]),
-
-                      '0netw_IH_HH_B': np.zeros(self.nhidNetw),
-                      '0glob_IH_HH_B': np.zeros(self.nhidGlob)
-
-                      }
-
-        #Defining biases
-        self.biases = {  'ng_H0_B'   : varInit(self.nOut, 'ng_H0_B'  ),
-                         'glob_HO_B' : varInit(self.nOut, 'glob_HO_B')  }
-
-
-
-        #ngCell   = rnn_cell.BasicRNNCell(nhid,          activation = self.actfct)
-        globCell = rnn_cell.BasicRNNCell(self.nhidGlob, activation = self.actfct) #No initialization required
-        netwCell = rnn_cell.BasicRNNCell(self.nhidNetw, activation = self.actfct) #No initialization required
-
-        #Global dynamic cell
-
-        #Global dynamic cell output
-        globOut, globState = rnn.rnn(globCell, _Z1, initial_state=initG,
-                                     dtype=tf.float32, scope = 'glob_IH_HH')
-        netwOut, netwState = rnn.rnn(netwCell, _Z1, initial_state=initN,  
-                                     dtype=tf.float32, scope = 'netw_IH_HH')
-        #ngO, ngS           = rnn.rnn(ngCell, _Z1,   initial_state=initNG, dtype=tf.float32, scope = 'ng_IH_HH')
-        
-        #ng_Z2    = ngO[-1][:,:self.nhidNetw] 
-        
-        #Hidden to Output
-        glob_Z2 = tf.matmul(globOut[-1], self.weights['glob_HO_W']) # + self.biases['glob_HO_B']
-
-        #Direct netw connectivity
-        #netw_Z2 = self.actfct(tf.matmul( _Z1[-1], self.weights['netw_dir_W']) + self.biases['netw_dir_B'])
-        #Z2 = tf.matmul(_Z1[-1],self.alpha) + netw_Z2 + glob_Z2
-
-        gNoise = 0
-
-        #Applying calcium filter        
-        #Z2 = tf.tanh(tf.matmul(_Z1[-1], self.weights['alpha_W']) + ng_Z2 + gNoise)
-        Z2 = tf.matmul(_Z1[-1], self.weights['alpha_W']) + netwOut[-1] + glob_Z2 # + gNoise)
-        #Z2 = netwOut[-1] + glob_Z2 
-
-        return Z2
-
 
     '''
     ________________________________________________________________________
@@ -509,8 +469,10 @@ class actConnGraph(object):
 
         inputs    : Input data sequence (time series fed into model)
         outputs   : Output data (label or prediction)
-        perm      : Wheter batches will be selected via permutation or random
         nbIters   : Number of batches per batchcreation
+        perm      : Wheter batches will be selected via permutation (no replacement)
+                    or random.
+
 
         ________________________________________________________________________
 
@@ -523,22 +485,7 @@ class actConnGraph(object):
             *nInput is currently only present in non classifier models
 
       ________________________________________________________________________
-
-
-                            OLD LINES TO USE BATCH CREATION
-
-
-                 if stepTr % self.dispStep == 0:
-                    stepBat = 0 #Testing steps
-                    Xtr_batch, Ytr_batch = self.batchCreation(Xtr, Ytr, 
-                                             nbIters   = self.dispStep)
-
-                feed_dict={  self._X    : Xtr_batch[stepBat,...], 
-                             self._Y    : Ytr_batch[stepBat,...],
-                             self._batch : stepTr  }
-
-
-    ________________________________________________________________________
+_______
  
 
 
@@ -625,26 +572,23 @@ class actConnGraph(object):
             #L1 loss
             #self._sparsC = tf.add_n([tf.reduce_sum(tf.abs(v)) for v in self.variables])
 
-            #self._sparsC = tf.zeros(1)
-
             #Cross entropy
             ngml = tf.nn.sigmoid_cross_entropy_with_logits(self._Z2, self._Y)
             self._ngml = tf.reduce_sum(ngml)
 
-            cost = (self._ngml*self.lossW +self._sparsC*self.sparsW) / \
-                   (2*self.batchSize)
+            #cost = (self._ngml*self.lossW +self._sparsC*self.sparsW) / \
+            #       (2*self.batchSize)
 
-            #cost = (self._ngml*self.lossW) / (2*self.batchSize)
+            cost = (self._ngml*self.lossW) / (2*self.batchSize)
                    
           else:
 
-            sparsC  = tf.add_n([tf.reduce_sum(tf.abs(v)) for v in self.variables]) 
-
+            sparsC = tf.add_n([tf.reduce_sum(tf.abs(v)) for v in self.variables]) 
             self._sparsC = sparsC*self.sparsW
 
             #Sum of square distance
-            self._ngml = tf.reduce_sum(tf.pow(self._Z2 - self._Y, 2))*self.lossW
-            
+            self._ngml = tf.reduce_sum(tf.pow(self._Z2 - self._Y,2))*self.lossW
+
             #Prior
             ngprior = 0
 
@@ -740,6 +684,7 @@ class actConnGraph(object):
 
         return [Vars[i].assign(tempM[i]) for i in vidxAll]
 
+
     def _VNoise(self, variables, learningR = .001, std = .001):
         ''' Adding stochasticity in the tensorflow graph variables at every update
            for a stotastic gradient descent.
@@ -758,8 +703,6 @@ class actConnGraph(object):
         return V
 
 
-
-
     def launchGraph(self, D, detail = True, savepath = '_.ckpt'):
         # Launch the graph
         #   Arguments ... 
@@ -774,14 +717,18 @@ class actConnGraph(object):
         #Which sequence for classification mini batches
 
         if 'class' in self.model:
-            trSidx  = randint( 0, len( D['Ytr'][0] ),
-                              [int(self.batchSize/2), self.nbIters] )
-            trNSidx = randint( 0, len( D['Ytr'][1] ),
-                              [int(self.batchSize/2), self.nbIters] )
-            teSidx  = randint( 0, len( D['Yte'][0] ),
-                              [int(self.batchSize/2), self.nbIters] )
-            teNSidx = randint( 0, len( D['Yte'][1] ),
-                              [int(self.batchSize/2), self.nbIters] )
+            trIdx  = [ randint( 0, len( D['Ytr'][0] ),
+                              [int(self.batchSize/2), self.nbIters] ),
+                       randint( 0, len( D['Ytr'][1] ),
+                              [int(self.batchSize/2), self.nbIters] ) ]
+
+            teIdx  = [ randint( 0, len( D['Yte'][0] ),
+                              [int(self.batchSize/2), self.nbIters] ),
+                       randint( 0, len( D['Yte'][1] ), 
+                              [int(self.batchSize/2), self.nbIters] ) ] 
+        else:
+            trIdx   = randint( 0, len(D['Ytr']), [self.batchSize, self.nbIters] )
+            teIdx   = randint( 0, len(D['Yte']), [self.batchSize, self.nbIters] ) 
 
         #Initialize counters
         stepTr  = 0 #Training steps
@@ -819,12 +766,13 @@ class actConnGraph(object):
             while stepTr < self.nbIters:
 
                 #Train feed dictionnary 
-                FD_tr = self._feedDict(D['Xtr'], stepTr ,trSidx, trNSidx)
+                FD_tr = self._feedDict(D['Xtr'], D['Ytr'], stepTr ,trIdx)
 
                 if detail:
                     #Test feed dictionnary 
-                    FD_te = self._feedDict(D['Xte'], stepTr ,teSidx, teNSidx)
+                    FD_te = self._feedDict(D['Xte'], D['Yte'], stepTr ,teIdx)
                     if 'class' in self.model:
+
                            if accNum == 500:
                                 accNum = 0
                            claTe, _y = sess.run(self._resp, feed_dict = FD_te)
@@ -844,7 +792,6 @@ class actConnGraph(object):
                         self._trackVar( nbSamp, samp, self.v2track )
                         samp +=1
 
-
                 if detail and stepTr % self.dispStep == 0:
 
                     #trSpars = sess.run(self._sparsC, feed_dict = FD_tr)
@@ -855,46 +802,62 @@ class actConnGraph(object):
 
                     #Calculating accuraty for classification
                     if 'class' in self.model:
-                           accTe = (np.sum(ansTe))/(500*self.batchSize)
-                           self.acc.append(accTe)
+                       accTe = (np.sum(ansTe))/(500*self.batchSize)
+                       self.acc.append(accTe)
 
-                           accTr = (np.sum(ansTr))/(500*self.batchSize)
+                       accTr = (np.sum(ansTr))/(500*self.batchSize)
 
-                    #Printing progress 
-                    print( " Iter: " + str(stepTr) + "/" + str(self.nbIters)         +  
-                           "   ~  Tr Loss: " + "{:.6f}".format(self.lossTr[stepTr])  +
-                           "   ~  Tr Acc: "  + "{:.2f}".format(accTr*100)            + 
-                           "   |  Te Loss: " + "{:.6f}".format(lossTe)               +
-                           "   ~  Te Acc "   + "{:.2f}".format(accTe*100)     )
- 
+                       #Printing progress 
+                       print( " Iter: " + str(stepTr) + "/" + str(self.nbIters)         +  
+                               "   ~  Tr Loss: " + "{:.6f}".format(self.lossTr[stepTr]) +
+                               "   ~  Tr Acc: "  + "{:.2f}".format(accTr*100)           + 
+                               "   |  Te Loss: " + "{:.6f}".format(lossTe)              +
+                               "   ~  Te Acc "   + "{:.2f}".format(accTe*100)     )
+
+                    else:
+                      print( " Iter: " + str(stepTr) + "/" + str(self.nbIters)           +  
+                               "   ~  Tr Loss: " + "{:.6f}".format(self.lossTr[stepTr]) + 
+                               "   |  Te Loss: " + "{:.6f}".format(lossTe)  )
+
+   
                 #Running backprop
                 sess.run(self.optimizer, FD_tr)
 
                 #Applying masks
-                #sess.run(self.masking)
+                if self.masks:
+                  sess.run(self.masking, FD_tr)
 
                 stepTr  += 1
                 stepBat += 1
-            
-            #Final accuracy
-            self._finalAcc(D,sess)
 
-            #Saving variables
+            #Saving variables final state
+            self.evalVars = {v.name: v.eval() for v in tf.trainable_variables()}
+            
             if detail:
-                self.finalAcc = (np.sum(ansTr))/(500*self.batchSize)
+                #Final accuracy
+                self._finalAcc(D,sess) #Final accuracy
+
+                #Saving variables
                 self.saver.save(sess, savepath)
                 self.saver.save(sess, backupPath)
-                
-                #Saving variables final state
-                self.evalVars = {v.name: v.eval() for v in tf.trainable_variables()}
 
-                print('\nFinal training accuracy : {:.2f} '.format(self.AccTr))
-                print(  'Final testing accuracy  : {:.2f} '.format(self.AccTe))
+                if 'class' in self.model:
+                  print('\nFinal training accuracy : {:.2f} '.format(self.AccTr))
+                  print(  'Final testing accuracy  : {:.2f} '.format(self.AccTe))
+
                 print('\nTotal time:  ' + str(datetime.timedelta(seconds = time.time()-t)))
-            
+            else:
+                self.AccTr = -1
+                self.AccTe = -1
+
+            #Final accuracy
+            self._finalAcc(D,sess) #Final accuracy
+
         return self.AccTe
 
     def _classiPred(self):
+      # Classification models prediction
+
         out  = tf.nn.sigmoid(self._Z2)
         #Whether answer is right
         _Y = tf.round(out)
@@ -904,46 +867,98 @@ class actConnGraph(object):
         return resp, _Y
 
     def _finalAcc(self,D,sess):
+        ''' Will calculate the finnal accuracy on training and
+            testing sets.''' 
 
-        #Number of examples per label
-        nlabTr1 = len(D['Ytr'][0]); nlabTe1 = len(D['Yte'][0])
+        if 'class' in self.model:
 
-        finalAccTr_D = self._feedDict(D['Xtr'])
-        finalAccTe_D = self._feedDict(D['Xte'])
+          #Creating feeding dictionnaries 
+          finalAccTr_D = self._feedDict(D['Xtr'],D['Ytr'])
+          finalAccTe_D = self._feedDict(D['Xte'],D['Yte'])
 
-        AccTr,self.respTr = sess.run(self._resp, feed_dict = finalAccTr_D)
-        AccTe,self.respTe = sess.run(self._resp, feed_dict = finalAccTe_D)
+          #Number of examples per label
+          nlabTr1 = len(D['Ytr'][0]); nlabTe1 = len(D['Yte'][0])
 
-        AccTr1 = np.mean(AccTr[:nlabTr1]); AccTr0 = np.mean(AccTr[nlabTr1:])
-        AccTe1 = np.mean(AccTe[:nlabTe1]); AccTe0 = np.mean(AccTe[nlabTe1:])
+          #Calculating the prediction acc
+          AccTr,self.respTr = sess.run(self._resp, feed_dict = finalAccTr_D)
+          AccTe,self.respTe = sess.run(self._resp, feed_dict = finalAccTe_D)
+
+          #Taking the average prediction acc of all examples
+          AccTr1 = np.mean(AccTr[:nlabTr1]); AccTr0 = np.mean(AccTr[nlabTr1:])
+          AccTe1 = np.mean(AccTe[:nlabTe1]); AccTe0 = np.mean(AccTe[nlabTe1:])
+
+          #Converting to pourcentage
+          self.AccTr = (AccTr1+AccTr0)*50
+          self.AccTe = (AccTe1+AccTe0)*50
+
+        else:
+
+          #Sampling proportion for training and testing sets
+          sampPropTr = .10 
+          sampProbTe = .50
+
+          #Number of samples for each set
+          sampTrSize = int( sampPropTr * len(D['Ytr']) ) 
+          sampTeSize = int( sampProbTe * len(D['Yte']) )
+
+          #Indexes of samples for each set
+          idxTr = np.random.permutation(len(D['Ytr']))[:sampTrSize] 
+          idxTe = np.random.permutation(len(D['Yte']))[:sampTeSize]
+
+          #Creating feeding dictionnaries
+          finalAccTr_D = self._feedDict( D['Xtr'][idxTr, ...], D['Ytr'][idxTr, :] )
+          finalAccTe_D = self._feedDict( D['Xte'][idxTe, ...], D['Yte'][idxTe, :] )
+
+          #Making the prediction for all sequences
+          Ztr = sess.run(self._Z2, feed_dict = finalAccTr_D)
+          Zte = sess.run(self._Z2, feed_dict = finalAccTe_D)
+
+          #Calculating the correlation coefficient between pred and real
+          self.AccTr = np.mean(np.diag(corr2_coeff(D['Ytr'],Ztr)))
+          self.AccTe = np.mean(np.diag(corr2_coeff(D['Yte'],Zte)))
 
 
-        self.AccTr = (AccTr1+AccTr0)*50
-        self.AccTe = (AccTe1+AccTe0)*50
+    def _feedDict(self, Dx, Dy, stepTr= None, idx = None):
 
 
-
-    def _feedDict(self, D, stepTr= None, idxS= None, idxNS= None):
-
+      if 'class' in self.model:
 
         if not stepTr == None:
-          FD ={ self._X : np.vstack([ D[0][idxS[:, stepTr],:],
-                                      D[1][idxNS[:,stepTr],:] ]), 
+          idxS  = idx[0]
+          idxNS = idx[1]
+
+          FD ={ self._X : np.vstack([ Dx[0][idxS[:, stepTr],:],
+                                      Dx[1][idxNS[:,stepTr],:] ]), 
                 self._Y : np.vstack([ [1] * int(self.batchSize/2),
                                       [0] * int(self.batchSize/2) ]),
                 self._batch     : stepTr,
                 self._batchSize : self.batchSize,
                 self._keepProb  : self.keepProb   }
         else:
-          len(D[0]) + len(D[1])
-          FD ={ self._X : np.vstack([ D[0],D[1] ]),
-                self._Y : np.hstack([ [[1] * len(D[0])],
-                                      [[0] * len(D[1])] ]).T,
+          #For final testing
+          FD ={ self._X : np.vstack([ Dx[0], Dx[1] ]),
+                self._Y : np.hstack([ [[1] * len(Dx[0])],
+                                      [[0] * len(Dx[1])] ]).T,
                 self._batch     : 1,
-                self._batchSize : len(D[0]) + len(D[1]),
+                self._batchSize : len(Dx[0]) + len(Dx[1]),
                 self._keepProb  : 1.0  }
 
-        return FD
+      else:
+
+        if not stepTr == None:
+          FD = { self._X : Dx[ idx[:,stepTr], ... ],
+                 self._Y : Dy[ idx[:,stepTr], :   ],
+                 self._batch     : stepTr,
+                 self._batchSize : self.batchSize  }
+
+        else:
+          #For final testing
+          FD = { self._X         : Dx,
+                 self._Y         : Dy,
+                 self._batch     : 1,
+                 self._batchSize : len(Dy) }
+
+      return FD
 
 
     def _trackVar(self, nbSamp, samp, v2track):
@@ -1106,7 +1121,6 @@ class actConnGraph(object):
 
 def plotfit(paramFile, argDict= None, idx = range(1000), ckpt='/tmp/backup.ckpt'):
     ''' 
-    1
     Will plot the real values and the fit of the model on top of it
     in order to evaluate the fit of the model.
 
@@ -1116,11 +1130,11 @@ def plotfit(paramFile, argDict= None, idx = range(1000), ckpt='/tmp/backup.ckpt'
     _________________________________________________________________________
         
          argDict   : Overwriting certain paramers. Has to be of type dict
-         paramFile : Parameter file to run (in activeConnMain)
-         nbPoints  : number of time points to pick from the fit dataset 
+         paramFile : Parameter file to run (in optoConnMain)
+         idx       : indexes of examples to plot
          ckpt      : ckpt can either be a full ckpt path, or only ckpt name.
                        ~> If only the name is provided, plotfit will look into 
-                             activeConn/checkpoints/
+                             optoConn/checkpoints/
                        ~> If agument not provided, plotfit will use the backup 
                              ckpt in /tmp.
 
@@ -1135,10 +1149,12 @@ def plotfit(paramFile, argDict= None, idx = range(1000), ckpt='/tmp/backup.ckpt'
     argDict['batchSize'] = nbPoints #Adjusting batchsize for nb of points
 
     #Building graph
-    graphFit, dataDict = mainFile(argDict, run = False)
+    graphFit, dataDict, L = mainFile(argDict, run = False)
 
-    X = dataDict['FiX'][:,idx,:] # Input
-    Y = dataDict['FiY'][idx,:]   # Label
+    X = dataDict['FitX'][idx, ...] # Input
+    Y = dataDict['FitY'][idx, :]   # Label
+
+    N = Y.shape[1]
 
     #Loading ckpt if checkpoint name only is provided
     if ckpt[0] != '/':
@@ -1150,29 +1166,37 @@ def plotfit(paramFile, argDict= None, idx = range(1000), ckpt='/tmp/backup.ckpt'
         with tf.variable_scope("") as scope:
             scope.reuse_variables()
 
-            nEx  = X.shape[0]
-
             #X is transposed since it does not go through batch creation function
-            _Z2 = sess.run(graphFit._Z2, feed_dict = { graphFit._X : X.transpose((1,0,2)) })
+            _Z2 = sess.run(graphFit._Z2, feed_dict = { graphFit._X : X })
 
     #Plotting test set
     plt.figure(figsize=(20, 5))
-    plt.imshow(Y.T, aspect='auto') ; plt.title('Real Data')
-    plt.xlabel('Time (frames)') ; plt.ylabel('Neurons') ; plt.colorbar()
+    plt.imshow(Y.T, aspect='auto') ; 
+    plt.title('Sample of Simulated Calcium Data', fontsize = 14)
+    plt.xlabel('Frames (time)', fontsize = 14) ; plt.ylabel('Neurons', fontsize = 14) ; plt.colorbar()
 
     #Plotting prediction on test set
     plt.figure(figsize=(20, 5))
-    plt.imshow(_Z2.T, aspect='auto') ; plt.title('Model Predictions')
-    plt.ylabel('Neurons') ; plt.xlabel('Time (frames)') ; plt.colorbar()
+    plt.imshow(_Z2.T, aspect='auto') ; plt.title('Model Predictions', fontsize = 14)
+    plt.ylabel('Neurons', fontsize = 14) ; plt.xlabel('Time (frames)', fontsize = 14) ; plt.colorbar()
 
     #Printing the difference between data and prediction
     plt.figure(figsize=(20, 5))
-    plt.imshow((Y-_Z2).T, aspect='auto') ; plt.title('Real - Model')
-    plt.ylabel('Neurons') ; plt.xlabel('Time (frames)') ; plt.colorbar()
+    plt.imshow((Y-_Z2).T, aspect='auto') ; plt.title('Real - Model', fontsize = 14)
+    plt.ylabel('Neurons', fontsize = 14) ; plt.xlabel('Time (frames)') ; plt.colorbar()
+
+    n = np.random.randint(N)
+
+    plt.figure(figsize=(20, 5))
+    plt.plot(  Y[:,n], 'b', label = 'real')
+    plt.plot(_Z2[:,n], 'r', label = 'pred')
+    plt.xlabel('Time (frames)') ; plt.ylabel('Neurons')
+    plt.title('Neuron {} activity and prediction'.format(n))
+    plt.legend()
 
     plt.show()
 
-    return graphFit, dataDict
+    return Y, _Z2
 
 
 #    def sensitivityA(self, data, ckpt='/tmp/backup.ckpt'):
