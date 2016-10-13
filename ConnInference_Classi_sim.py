@@ -80,8 +80,9 @@ for cross in range(0,nCross):
 
     np.save(path+saveName,accAll)
 
-sendSMS('Job completed ;\n'  + mSaveName + '\n\nElapsed time ; ' +
-         str(datetime.timedelta(seconds = time.time()-t)))
+#Sending sms when job completed
+#sendSMS('Job completed ;\n'  + mSaveName + '\n\nElapsed time ; ' +
+#         str(datetime.timedelta(seconds = time.time()-t)))
 
 
 
