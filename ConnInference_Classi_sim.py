@@ -9,8 +9,8 @@ import time
 import datetime
 
 from smsphc            import sendSMS
-from activeConn        import activeConnMain as ACM
-from activeConn.tools  import *
+from optoConn        import optoConnMain as OCM
+from optoConn.tools  import *
 from joblib            import Parallel, delayed
 
 import tensorflow as tf
@@ -18,55 +18,61 @@ import tensorflow as tf
 
 #______________________________________________________________________________
 
-nJobs =  80
+nJobs  = 75 #Number of jobs
+N      = 75 #Number of neurons in network
+nCross = 10 #Number of cross-validations
+
 path  =  '/groups/turaga/home/castonguayp/research/' + \
-         'activeConn/classiMat/perceptron/simulClassi/'
-mSaveName = 'simul_30Hz_y97_prcptrRelu_3_0_0_3'
+         'optoConn/classiMat/perceptron/simulClassi/'
+mSaveName = 'stblock_N01_30Hz_30ms_25obs_20spar_prcptrRelu_10_0_0_10'
 
 
-def allNclassi(N):
+def allNclassi(target):
 	#Classify all neurons
 
-    acc = np.zeros(80)
+    acc = np.zeros(N)
 
                  
     argDict = {    
-                 'seqRange'   : [[-3, 0],[0,3]], 
+                 'seqRange'   : [[-5, 0],[0,20]], 
                  'actfct'     : tf.nn.relu, 
-                 'nbIters'    : 1000, 
-                 'sparsW'     : .005,   
-                 'nhidclassi' : 30,
-                 'dataset'    : 'stblockOPTO_30Hz_y097.npy',
-                 'model'      : '__classOptoPercep__',
+                 'nbIters'    : 1500, 
+                 'keepProb'   : 0.5,
+                 'sparsW'     : .000005,   
+                 'nhidclassi' : 100,
+                 'dataset'    : 'stblock_N01_30Hz_25obs_20spar_Opto.npy',
+                 'model'      : '__classOptoNN__',
                  'multiLayer' : 3,
-                 'method'     : 1,
+                 'method'     : 3,
                  'learnRate'  : 0.0005,   
                  'detail'     : False, 
+                 'batchSize'  : 1,
                  'ctrl'       : 'noStim',
-                 'cells'      : [N,1]
+                 'cells'      : [target,1]
                 }
 
-    G,D,L = ACM.simul(argDict, run = False) 
+    G,D,L = OCM.simul(argDict, run = False) 
     
-    for n in range(1,81):
-        argDict.update({ 'cells':[N,n] }) 
+    #Decoding cells
+    for decode in range(1,N+1):
+        argDict.update({ 'cells':[target,decode] }) 
 
-        G,D,L = ACM.simul(argDict, run = True, graph = G)
+        G,D,L = OCM.simul(argDict, run = True, graph = G)
 
-        acc[n-1] = G.AccTe
+        acc[decode-1] = G.AccTe
         
     return acc
 
 t = time.time()
 #Cross-validationww
-for cross in range(0,20):
+for cross in range(0,nCross):
     saveName = mSaveName + '_cross_' + str(cross)
 
     print('Saving in '+ path + saveName)
 
-    #Executing in parrallel
+    #Executing in parralle
     accAll = Parallel(n_jobs=nJobs)( delayed(allNclassi)(i) 
-		                             for i in np.arange(1,81) )
+		                             for i in np.arange(1,N+1) )
 
     #Stacking into a single matrix
     accAll = np.vstack(accAll)
